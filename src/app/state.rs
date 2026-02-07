@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use crate::categories::UpdateCategory;
 use crate::decoder::{ValidationResult, WeakAura};
-use crate::saved_variables::ConflictAction;
+use crate::saved_variables::{AuraTreeNode, ConflictAction, ConflictDetectionResult, ImportResult};
 
 /// Entry for a parsed aura in the list
 #[derive(Clone)]
@@ -46,5 +46,34 @@ pub(crate) enum LoadingUpdate {
         invalid: usize,
     },
     /// Loading failed with an error
+    Error(String),
+}
+
+/// Progress update from background import task
+pub(crate) enum ImportUpdate {
+    /// Incremental progress report
+    Progress { progress: f32, message: String },
+    /// Conflicts detected — hand data back to UI for resolution
+    ConflictsDetected(ConflictDetectionResult),
+    /// Import completed successfully
+    Complete {
+        result: ImportResult,
+        tree: Vec<AuraTreeNode>,
+        tree_count: usize,
+    },
+    /// Import failed with an error
+    Error(String),
+}
+
+/// Progress update from background SavedVariables scanning task
+pub(crate) enum ScanUpdate {
+    /// Progress message
+    Progress { message: String },
+    /// Scanning completed successfully
+    Complete {
+        tree: Vec<AuraTreeNode>,
+        count: usize,
+    },
+    /// Scanning failed with an error
     Error(String),
 }

@@ -17,7 +17,7 @@ use crate::saved_variables::{
 };
 use crate::theme;
 
-use state::{ConflictResolutionUI, LoadingUpdate, ParsedAuraEntry};
+use state::{ConflictResolutionUI, ImportUpdate, LoadingUpdate, ParsedAuraEntry};
 
 /// Main application state
 pub struct WeakAuraImporter {
@@ -85,6 +85,14 @@ pub struct WeakAuraImporter {
     pub(crate) loading_message: String,
     /// Receiver for loading updates from background tasks
     pub(crate) loading_receiver: Option<mpsc::Receiver<LoadingUpdate>>,
+    /// Receiver for import updates from background tasks
+    pub(crate) import_receiver: Option<mpsc::Receiver<ImportUpdate>>,
+    /// Whether a background scanning task (loading SavedVariables) is in progress
+    pub(crate) is_scanning: bool,
+    /// Scanning progress message
+    pub(crate) scanning_message: String,
+    /// Receiver for scan updates from background tasks
+    pub(crate) scan_receiver: Option<mpsc::Receiver<state::ScanUpdate>>,
 }
 
 impl Default for WeakAuraImporter {
@@ -122,15 +130,23 @@ impl Default for WeakAuraImporter {
             loading_progress: 0.0,
             loading_message: String::new(),
             loading_receiver: None,
+            import_receiver: None,
+            is_scanning: false,
+            scanning_message: String::new(),
+            scan_receiver: None,
         }
     }
 }
 
 impl eframe::App for WeakAuraImporter {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Process async loading results
+        // Process async results from background tasks
         self.poll_loading();
-        if self.is_loading {
+        self.poll_importing();
+        self.poll_scanning();
+
+        // Request repaint while any background task is in progress
+        if self.is_loading || self.is_importing || self.is_scanning {
             ctx.request_repaint();
         }
 

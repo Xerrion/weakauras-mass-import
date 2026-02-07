@@ -321,13 +321,7 @@ impl WeakAuraImporter {
                                             egui::Checkbox::new(&mut entry.selected, ""),
                                         );
 
-                                        // Status Icon
-                                        let icon = if is_valid {
-                                            egui::RichText::new("*").color(theme::colors::SUCCESS)
-                                        } else {
-                                            egui::RichText::new("x").color(theme::colors::ERROR)
-                                        };
-                                        ui.label(icon);
+
 
                                         // Aura Info Label (clickable)
                                         let summary = entry.validation.summary();

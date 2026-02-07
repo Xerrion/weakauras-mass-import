@@ -106,8 +106,20 @@ impl WeakAuraImporter {
                     );
                 }
 
-                // Existing auras tree
-                if !self.existing_auras_tree.is_empty() {
+                // Existing auras tree (or scanning indicator)
+                if self.is_scanning {
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(
+                            egui::RichText::new(&self.scanning_message)
+                                .color(theme::colors::TEXT_SECONDARY),
+                        );
+                    });
+                } else if !self.existing_auras_tree.is_empty() {
                     ui.add_space(8.0);
                     ui.separator();
                     ui.add_space(4.0);

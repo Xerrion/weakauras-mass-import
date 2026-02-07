@@ -106,33 +106,55 @@ impl WeakAuraImporter {
         }
     }
 
-    /// Load existing auras from selected SavedVariables file
-    pub(crate) fn load_existing_auras(&mut self) -> Option<SavedVariablesManager> {
-        let sv_path = self.selected_sv_path.as_ref()?;
-        let mut manager = SavedVariablesManager::new(sv_path.clone());
+    /// Load existing auras from selected SavedVariables file (async)
+    pub(crate) fn load_existing_auras(&mut self) {
+        let Some(sv_path) = self.selected_sv_path.clone() else {
+            return;
+        };
 
-        match manager.load() {
-            Ok(()) => {
-                // Get aura tree structure
-                let tree = manager.get_aura_tree();
-                self.existing_auras_count = tree.iter().map(|n| n.total_count()).sum();
-                self.existing_auras_tree = tree;
-                self.expanded_groups.clear();
-                Some(manager)
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+
+        self.is_scanning = true;
+        self.scanning_message = "Loading SavedVariables...".to_string();
+        self.scan_receiver = Some(rx);
+
+        self.runtime.spawn(async move {
+            let _ = tx
+                .send(super::state::ScanUpdate::Progress {
+                    message: "Reading SavedVariables file...".to_string(),
+                })
+                .await;
+
+            let mut manager = SavedVariablesManager::new(sv_path);
+
+            match manager.load() {
+                Ok(()) => {
+                    let tree = manager.get_aura_tree();
+                    let count = tree.iter().map(|n| n.total_count()).sum();
+
+                    let _ = tx
+                        .send(super::state::ScanUpdate::Complete { tree, count })
+                        .await;
+                }
+                Err(WeakAuraError::FileNotFound(_)) => {
+                    // File doesn't exist yet — that's okay, just return empty
+                    let _ = tx
+                        .send(super::state::ScanUpdate::Complete {
+                            tree: Vec::new(),
+                            count: 0,
+                        })
+                        .await;
+                }
+                Err(e) => {
+                    let _ = tx
+                        .send(super::state::ScanUpdate::Error(format!(
+                            "Failed to load SavedVariables: {}",
+                            e
+                        )))
+                        .await;
+                }
             }
-            Err(WeakAuraError::FileNotFound(_)) => {
-                self.existing_auras_tree = Vec::new();
-                self.existing_auras_count = 0;
-                self.expanded_groups.clear();
-                Some(manager) // Return empty manager
-            }
-            Err(e) => {
-                self.set_error(&format!("Failed to load SavedVariables: {}", e));
-                self.existing_auras_tree = Vec::new();
-                self.existing_auras_count = 0;
-                None
-            }
-        }
+        });
     }
 
     /// Parse the input text for WeakAura strings
@@ -193,123 +215,133 @@ impl WeakAuraImporter {
         }
     }
 
-    /// Import selected auras to SavedVariables
+    /// Import selected auras to SavedVariables (async)
     pub(crate) fn import_auras(&mut self) {
-        let Some(sv_path) = &self.selected_sv_path else {
+        let Some(sv_path) = self.selected_sv_path.clone() else {
             self.set_error("No SavedVariables file selected");
             return;
         };
 
-        // Start import progress
-        self.is_importing = true;
-        self.import_progress = 0.0;
-        self.import_progress_message = "Loading SavedVariables...".to_string();
-
-        let mut manager = SavedVariablesManager::new(sv_path.clone());
-
-        // Load existing SavedVariables
-        self.import_progress = 0.1;
-        if let Err(e) = manager.load() {
-            // File might not exist yet, that's okay
-            if !matches!(e, WeakAuraError::FileNotFound(_)) {
-                self.set_error(&format!("Failed to load SavedVariables: {}", e));
-                self.is_importing = false;
-                return;
-            }
-        }
-
-        self.import_progress = 0.2;
-        self.import_progress_message = "Collecting auras...".to_string();
-
-        // Collect selected valid auras
-        let auras: Vec<&WeakAura> = self
+        // Collect selected valid auras on main thread before spawning
+        let auras: Vec<WeakAura> = self
             .parsed_auras
             .iter()
             .filter(|e| e.selected && e.aura.is_some())
-            .filter_map(|e| e.aura.as_ref())
+            .filter_map(|e| e.aura.clone())
             .collect();
 
         if auras.is_empty() {
             self.set_error("No valid auras selected for import");
-            self.is_importing = false;
             return;
         }
 
-        self.import_progress = 0.3;
-        self.import_progress_message = "Detecting conflicts...".to_string();
+        // Clone global_categories for conflict resolution initialization
+        let global_categories = self.global_categories.clone();
 
-        // Detect conflicts
-        let auras_owned: Vec<WeakAura> = auras.into_iter().cloned().collect();
-        let conflict_result = manager.detect_conflicts(&auras_owned);
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
 
-        // If there are conflicts, show the conflict dialog
-        if !conflict_result.conflicts.is_empty() {
-            // Initialize resolutions with defaults
-            self.conflict_resolutions = conflict_result
-                .conflicts
-                .iter()
-                .map(|c| ConflictResolutionUI {
-                    aura_id: c.aura_id.clone(),
-                    action: ConflictAction::UpdateSelected,
-                    categories: self.global_categories.clone(),
-                    expanded: false,
+        self.is_importing = true;
+        self.import_progress = 0.0;
+        self.import_progress_message = "Starting import...".to_string();
+        self.import_receiver = Some(rx);
+
+        self.runtime.spawn(async move {
+            let _ = tx
+                .send(super::state::ImportUpdate::Progress {
+                    progress: 0.1,
+                    message: "Loading SavedVariables...".to_string(),
                 })
-                .collect();
-            self.conflict_result = Some(conflict_result);
-            self.show_conflict_dialog = true;
-            self.selected_conflict_index = None;
-            self.is_importing = false;
-            self.import_progress = 0.0;
-            self.import_progress_message.clear();
-            return;
-        }
+                .await;
 
-        self.import_progress = 0.5;
-        self.import_progress_message = "Importing auras...".to_string();
+            let mut manager = SavedVariablesManager::new(sv_path);
 
-        // No conflicts - import directly
-        let auras_owned: Vec<WeakAura> = self
-            .parsed_auras
-            .iter()
-            .filter(|e| e.selected && e.aura.is_some())
-            .filter_map(|e| e.aura.as_ref())
-            .cloned()
-            .collect();
-
-        match manager.add_auras(&auras_owned) {
-            Ok(result) => {
-                self.import_progress = 0.8;
-                self.import_progress_message = "Saving changes...".to_string();
-
-                if let Err(e) = manager.save() {
-                    self.set_error(&format!("Failed to save: {}", e));
-                    self.is_importing = false;
+            // Load existing SavedVariables (blocking I/O in background task)
+            if let Err(e) = manager.load() {
+                if !matches!(e, WeakAuraError::FileNotFound(_)) {
+                    let _ = tx
+                        .send(super::state::ImportUpdate::Error(format!(
+                            "Failed to load SavedVariables: {}",
+                            e
+                        )))
+                        .await;
                     return;
                 }
-
-                self.import_progress = 1.0;
-                self.import_progress_message = "Complete!".to_string();
-
-                self.set_status(&format!("Import complete: {}", result.summary()));
-                self.last_import_result = Some(result);
-                // Refresh existing auras tree
-                let tree = manager.get_aura_tree();
-                self.existing_auras_count = tree.iter().map(|n| n.total_count()).sum();
-                self.existing_auras_tree = tree;
-
-                // Reset progress after a short delay (handled by clearing state)
-                self.is_importing = false;
             }
-            Err(e) => {
-                self.set_error(&format!("Import failed: {}", e));
-                self.is_importing = false;
+
+            let _ = tx
+                .send(super::state::ImportUpdate::Progress {
+                    progress: 0.3,
+                    message: "Detecting conflicts...".to_string(),
+                })
+                .await;
+
+            // Detect conflicts
+            let conflict_result = manager.detect_conflicts(&auras);
+
+            // If there are conflicts, send back to UI for resolution
+            if !conflict_result.conflicts.is_empty() {
+                let _ = tx
+                    .send(super::state::ImportUpdate::ConflictsDetected(conflict_result))
+                    .await;
+                return;
             }
-        }
+
+            let _ = tx
+                .send(super::state::ImportUpdate::Progress {
+                    progress: 0.5,
+                    message: "Importing auras...".to_string(),
+                })
+                .await;
+
+            // No conflicts - import directly
+            match manager.add_auras(&auras) {
+                Ok(result) => {
+                    let _ = tx
+                        .send(super::state::ImportUpdate::Progress {
+                            progress: 0.8,
+                            message: "Saving changes...".to_string(),
+                        })
+                        .await;
+
+                    if let Err(e) = manager.save() {
+                        let _ = tx
+                            .send(super::state::ImportUpdate::Error(format!(
+                                "Failed to save: {}",
+                                e
+                            )))
+                            .await;
+                        return;
+                    }
+
+                    let tree = manager.get_aura_tree();
+                    let tree_count = tree.iter().map(|n| n.total_count()).sum();
+
+                    let _ = tx
+                        .send(super::state::ImportUpdate::Complete {
+                            result,
+                            tree,
+                            tree_count,
+                        })
+                        .await;
+                }
+                Err(e) => {
+                    let _ = tx
+                        .send(super::state::ImportUpdate::Error(format!(
+                            "Import failed: {}",
+                            e
+                        )))
+                        .await;
+                }
+            }
+
+            // Keep global_categories alive until end of task (used by poll_importing for conflict init)
+            drop(global_categories);
+        });
     }
 
-    /// Complete import with conflict resolutions
+    /// Complete import with conflict resolutions (async)
     pub(crate) fn complete_import_with_resolutions(&mut self) {
-        let Some(sv_path) = &self.selected_sv_path else {
+        let Some(sv_path) = self.selected_sv_path.clone() else {
             self.set_error("No SavedVariables file selected");
             return;
         };
@@ -318,27 +350,7 @@ impl WeakAuraImporter {
             return;
         };
 
-        // Start import progress
-        self.is_importing = true;
-        self.import_progress = 0.0;
-        self.import_progress_message = "Loading SavedVariables...".to_string();
-
-        let mut manager = SavedVariablesManager::new(sv_path.clone());
-
-        // Load existing
-        self.import_progress = 0.2;
-        if let Err(e) = manager.load() {
-            if !matches!(e, WeakAuraError::FileNotFound(_)) {
-                self.set_error(&format!("Failed to load SavedVariables: {}", e));
-                self.is_importing = false;
-                return;
-            }
-        }
-
-        self.import_progress = 0.4;
-        self.import_progress_message = "Applying resolutions...".to_string();
-
-        // Convert UI resolutions to actual resolutions
+        // Convert UI resolutions to actual resolutions on main thread
         let resolutions: Vec<ConflictResolution> = self
             .conflict_resolutions
             .iter()
@@ -349,35 +361,79 @@ impl WeakAuraImporter {
             })
             .collect();
 
-        // Apply resolutions
-        let result = manager.apply_resolutions(
-            &conflict_result.new_auras,
-            &conflict_result.conflicts,
-            &resolutions,
-        );
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
 
-        self.import_progress = 0.7;
-        self.import_progress_message = "Saving changes...".to_string();
+        self.is_importing = true;
+        self.import_progress = 0.0;
+        self.import_progress_message = "Starting import...".to_string();
+        self.import_receiver = Some(rx);
 
-        // Save
-        if let Err(e) = manager.save() {
-            self.set_error(&format!("Failed to save: {}", e));
-            self.is_importing = false;
-            return;
-        }
+        self.runtime.spawn(async move {
+            let _ = tx
+                .send(super::state::ImportUpdate::Progress {
+                    progress: 0.1,
+                    message: "Loading SavedVariables...".to_string(),
+                })
+                .await;
 
-        self.import_progress = 1.0;
-        self.import_progress_message = "Complete!".to_string();
+            let mut manager = SavedVariablesManager::new(sv_path);
 
-        self.set_status(&format!("Import complete: {}", result.summary()));
-        self.last_import_result = Some(result);
-        // Refresh existing auras tree
-        let tree = manager.get_aura_tree();
-        self.existing_auras_count = tree.iter().map(|n| n.total_count()).sum();
-        self.existing_auras_tree = tree;
-        self.show_conflict_dialog = false;
-        self.conflict_resolutions.clear();
-        self.is_importing = false;
+            // Load existing
+            if let Err(e) = manager.load() {
+                if !matches!(e, WeakAuraError::FileNotFound(_)) {
+                    let _ = tx
+                        .send(super::state::ImportUpdate::Error(format!(
+                            "Failed to load SavedVariables: {}",
+                            e
+                        )))
+                        .await;
+                    return;
+                }
+            }
+
+            let _ = tx
+                .send(super::state::ImportUpdate::Progress {
+                    progress: 0.4,
+                    message: "Applying resolutions...".to_string(),
+                })
+                .await;
+
+            // Apply resolutions
+            let result = manager.apply_resolutions(
+                &conflict_result.new_auras,
+                &conflict_result.conflicts,
+                &resolutions,
+            );
+
+            let _ = tx
+                .send(super::state::ImportUpdate::Progress {
+                    progress: 0.7,
+                    message: "Saving changes...".to_string(),
+                })
+                .await;
+
+            // Save
+            if let Err(e) = manager.save() {
+                let _ = tx
+                    .send(super::state::ImportUpdate::Error(format!(
+                        "Failed to save: {}",
+                        e
+                    )))
+                    .await;
+                return;
+            }
+
+            let tree = manager.get_aura_tree();
+            let tree_count = tree.iter().map(|n| n.total_count()).sum();
+
+            let _ = tx
+                .send(super::state::ImportUpdate::Complete {
+                    result,
+                    tree,
+                    tree_count,
+                })
+                .await;
+        });
     }
 
     /// Paste from clipboard
@@ -620,6 +676,117 @@ impl WeakAuraImporter {
                     self.loading_receiver = None;
                     self.loading_progress = 0.0;
                     self.loading_message.clear();
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Poll for import updates from background tasks.
+    /// Called each frame from `update()`.
+    pub(crate) fn poll_importing(&mut self) {
+        let Some(rx) = &mut self.import_receiver else {
+            return;
+        };
+
+        loop {
+            match rx.try_recv() {
+                Ok(super::state::ImportUpdate::Progress { progress, message }) => {
+                    self.import_progress = progress;
+                    self.import_progress_message = message;
+                }
+                Ok(super::state::ImportUpdate::ConflictsDetected(conflict_result)) => {
+                    // Initialize resolutions with defaults
+                    self.conflict_resolutions = conflict_result
+                        .conflicts
+                        .iter()
+                        .map(|c| ConflictResolutionUI {
+                            aura_id: c.aura_id.clone(),
+                            action: ConflictAction::UpdateSelected,
+                            categories: self.global_categories.clone(),
+                            expanded: false,
+                        })
+                        .collect();
+                    self.conflict_result = Some(conflict_result);
+                    self.show_conflict_dialog = true;
+                    self.selected_conflict_index = None;
+                    self.is_importing = false;
+                    self.import_progress = 0.0;
+                    self.import_progress_message.clear();
+                    self.import_receiver = None;
+                    return;
+                }
+                Ok(super::state::ImportUpdate::Complete {
+                    result,
+                    tree,
+                    tree_count,
+                }) => {
+                    self.set_status(&format!("Import complete: {}", result.summary()));
+                    self.last_import_result = Some(result);
+                    self.existing_auras_tree = tree;
+                    self.existing_auras_count = tree_count;
+                    self.is_importing = false;
+                    self.import_progress = 1.0;
+                    self.import_progress_message = "Complete!".to_string();
+                    self.import_receiver = None;
+                    // Close conflict dialog if it was open
+                    self.show_conflict_dialog = false;
+                    self.conflict_resolutions.clear();
+                    return;
+                }
+                Ok(super::state::ImportUpdate::Error(msg)) => {
+                    self.set_error(&msg);
+                    self.is_importing = false;
+                    self.import_progress = 0.0;
+                    self.import_progress_message.clear();
+                    self.import_receiver = None;
+                    return;
+                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                    self.is_importing = false;
+                    self.import_receiver = None;
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Poll for scan (SavedVariables loading) updates from background tasks.
+    /// Called each frame from `update()`.
+    pub(crate) fn poll_scanning(&mut self) {
+        let Some(rx) = &mut self.scan_receiver else {
+            return;
+        };
+
+        loop {
+            match rx.try_recv() {
+                Ok(super::state::ScanUpdate::Progress { message }) => {
+                    self.scanning_message = message;
+                }
+                Ok(super::state::ScanUpdate::Complete { tree, count }) => {
+                    self.existing_auras_tree = tree;
+                    self.existing_auras_count = count;
+                    self.expanded_groups.clear();
+                    self.is_scanning = false;
+                    self.scanning_message.clear();
+                    self.scan_receiver = None;
+                    self.set_status(&format!("Loaded {} existing aura(s)", count));
+                    return;
+                }
+                Ok(super::state::ScanUpdate::Error(msg)) => {
+                    self.existing_auras_tree = Vec::new();
+                    self.existing_auras_count = 0;
+                    self.is_scanning = false;
+                    self.scanning_message.clear();
+                    self.scan_receiver = None;
+                    self.set_error(&msg);
+                    return;
+                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                    self.is_scanning = false;
+                    self.scan_receiver = None;
                     return;
                 }
             }
