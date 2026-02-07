@@ -20,6 +20,7 @@ fn load_test_string(filename: &str) -> String {
 // ──────────────────────────────────────────────────
 
 #[test]
+#[ignore = "requires local fixture file: [Merfin] Anchors_UI_QHD.txt"]
 fn test_decode_merfin_anchors() {
     let input = load_test_string("[Merfin] Anchors_UI_QHD.txt");
     let result = WeakAuraDecoder::decode(&input);
@@ -49,6 +50,7 @@ fn test_decode_merfin_anchors() {
 }
 
 #[test]
+#[ignore = "requires local fixture file: Hunter (QHD).txt"]
 fn test_decode_hunter_qhd() {
     let input = load_test_string("Hunter (QHD).txt");
     let result = WeakAuraDecoder::decode(&input);
@@ -71,6 +73,7 @@ fn test_decode_hunter_qhd() {
 // ──────────────────────────────────────────────────
 
 #[test]
+#[ignore = "requires local fixture file: [Merfin] Anchors_UI_QHD.txt"]
 fn test_metadata_extraction_handles_mixed_table_data() {
     let input = load_test_string("[Merfin] Anchors_UI_QHD.txt");
     let aura = WeakAuraDecoder::decode(&input).unwrap();
@@ -103,6 +106,7 @@ fn test_metadata_extraction_handles_mixed_table_data() {
 }
 
 #[test]
+#[ignore = "requires local fixture file: [Merfin] Anchors_UI_QHD.txt"]
 fn test_children_have_triggers_as_mixed_table() {
     // Many WA children have triggers as MixedTable (array + hash parts)
     let input = load_test_string("[Merfin] Anchors_UI_QHD.txt");
@@ -131,6 +135,7 @@ fn test_children_have_triggers_as_mixed_table() {
 // ──────────────────────────────────────────────────
 
 #[test]
+#[ignore = "requires local fixture file: WeakAuras-working.lua"]
 fn test_parse_working_saved_variables() {
     let content = load_test_string("WeakAuras-working.lua");
     let result = LuaParser::parse(&content);
@@ -148,6 +153,7 @@ fn test_parse_working_saved_variables() {
 }
 
 #[test]
+#[ignore = "requires local fixture file: WeakAuras-non-working.lua"]
 fn test_parse_non_working_saved_variables() {
     let content = load_test_string("WeakAuras-non-working.lua");
     let result = LuaParser::parse(&content);
@@ -165,6 +171,7 @@ fn test_parse_non_working_saved_variables() {
 }
 
 #[test]
+#[ignore = "requires local fixture file: WeakAuras-working.lua"]
 fn test_saved_variables_round_trip_preserves_structure() {
     // Parse a real SavedVariables file, serialize it back, parse again,
     // and verify the structure is equivalent
@@ -211,6 +218,7 @@ fn test_saved_variables_round_trip_preserves_structure() {
 // ──────────────────────────────────────────────────
 
 #[test]
+#[ignore = "requires local fixture file: [Merfin] Anchors_UI_QHD.txt"]
 fn test_full_import_pipeline_merfin_anchors() {
     let input = load_test_string("[Merfin] Anchors_UI_QHD.txt");
     let aura = WeakAuraDecoder::decode(&input).unwrap();
@@ -220,7 +228,7 @@ fn test_full_import_pipeline_merfin_anchors() {
     let mut manager = SavedVariablesManager::new(temp_path.clone());
 
     // Add the aura
-    let result = manager.add_auras(&[aura.clone()]).unwrap();
+    let result = manager.add_auras(std::slice::from_ref(&aura)).unwrap();
 
     // Verify all children were added
     assert!(!result.added.is_empty(), "Should have added some auras");
@@ -290,6 +298,7 @@ fn test_full_import_pipeline_merfin_anchors() {
 }
 
 #[test]
+#[ignore = "requires local fixture file: Hunter (QHD).txt"]
 fn test_full_import_pipeline_hunter_qhd() {
     let input = load_test_string("Hunter (QHD).txt");
     let aura = WeakAuraDecoder::decode(&input).unwrap();
@@ -297,7 +306,7 @@ fn test_full_import_pipeline_hunter_qhd() {
     let temp_path = std::env::temp_dir().join("weakauras_test_hunter.lua");
     let mut manager = SavedVariablesManager::new(temp_path.clone());
 
-    let result = manager.add_auras(&[aura.clone()]).unwrap();
+    let result = manager.add_auras(std::slice::from_ref(&aura)).unwrap();
 
     assert!(result.added.contains(&aura.id), "Parent should be added");
 
@@ -326,6 +335,7 @@ fn test_full_import_pipeline_hunter_qhd() {
 // ──────────────────────────────────────────────────
 
 #[test]
+#[ignore = "requires local fixture file: [Merfin] Anchors_UI_QHD.txt"]
 fn test_conflict_detection_with_existing_data() {
     let input = load_test_string("[Merfin] Anchors_UI_QHD.txt");
     let aura = WeakAuraDecoder::decode(&input).unwrap();
@@ -334,11 +344,11 @@ fn test_conflict_detection_with_existing_data() {
     let mut manager = SavedVariablesManager::new(temp_path.clone());
 
     // First import
-    manager.add_auras(&[aura.clone()]).unwrap();
+    manager.add_auras(std::slice::from_ref(&aura)).unwrap();
 
     // Second import of identical data - detect_conflicts should find NO new auras
     // but conflicts may be empty if data is identical (no changes detected)
-    let conflicts = manager.detect_conflicts(&[aura.clone()]);
+    let conflicts = manager.detect_conflicts(std::slice::from_ref(&aura));
 
     assert!(
         conflicts.new_auras.is_empty(),
