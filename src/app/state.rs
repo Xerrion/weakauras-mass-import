@@ -7,6 +7,7 @@ use crate::decoder::{ValidationResult, WeakAura};
 use crate::saved_variables::ConflictAction;
 
 /// Entry for a parsed aura in the list
+#[derive(Clone)]
 pub(crate) struct ParsedAuraEntry {
     pub validation: ValidationResult,
     pub aura: Option<WeakAura>,
@@ -26,4 +27,24 @@ pub(crate) struct ConflictResolutionUI {
     pub categories: HashSet<UpdateCategory>,
     /// Whether to show details
     pub expanded: bool,
+}
+
+/// Progress update from background loading task
+#[derive(Clone)]
+pub(crate) enum LoadingUpdate {
+    /// Incremental progress report
+    Progress {
+        current: usize,
+        total: usize,
+        message: String,
+    },
+    /// Loading completed successfully
+    Complete {
+        entries: Vec<ParsedAuraEntry>,
+        added: usize,
+        duplicates: usize,
+        invalid: usize,
+    },
+    /// Loading failed with an error
+    Error(String),
 }
