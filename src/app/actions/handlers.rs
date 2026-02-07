@@ -37,12 +37,19 @@ impl WeakAuraImporter {
                 self.loading_progress = 1.0;
                 self.loading_message.clear();
 
+                // Update status bar
+                let total = self.parsed_auras.len();
+                self.status_message = format!("{} aura(s) loaded, ready to import.", total);
+                self.status_is_error = false;
+
                 notify_decode_results(&mut self.toasts, added, duplicates, &errors, "loaded");
             }
             LoadingUpdate::Error(msg) => {
                 self.is_loading = false;
                 self.loading_progress = 0.0;
                 self.loading_message.clear();
+                self.status_message = format!("Load failed: {}", msg);
+                self.status_is_error = true;
                 self.toasts
                     .push(toast(&msg).title("Load Error").level(ToastLevel::Error));
             }
@@ -88,8 +95,11 @@ impl WeakAuraImporter {
                 tree,
                 tree_count,
             } => {
+                let summary = result.summary();
+                self.status_message = format!("Import complete: {}", summary);
+                self.status_is_error = false;
                 self.toasts.push(
-                    toast(&format!("Import complete: {}", result.summary()))
+                    toast(&format!("Import complete: {}", summary))
                         .title("Success")
                         .level(ToastLevel::Success),
                 );
@@ -103,6 +113,8 @@ impl WeakAuraImporter {
                 self.conflict_resolutions.clear();
             }
             ImportUpdate::Error(msg) => {
+                self.status_message = format!("Import failed: {}", msg);
+                self.status_is_error = true;
                 self.toasts
                     .push(toast(&msg).title("Import Error").level(ToastLevel::Error));
                 self.is_importing = false;
@@ -122,6 +134,8 @@ impl WeakAuraImporter {
                 self.is_scanning = false;
                 self.scanning_message.clear();
                 if count > 0 {
+                    self.status_message = format!("{} existing aura(s) in SavedVariables.", count);
+                    self.status_is_error = false;
                     self.toasts.push(
                         toast(&format!("Loaded {} existing aura(s)", count))
                             .level(ToastLevel::Info),
@@ -133,6 +147,8 @@ impl WeakAuraImporter {
                 self.existing_auras_count = 0;
                 self.is_scanning = false;
                 self.scanning_message.clear();
+                self.status_message = format!("Scan failed: {}", msg);
+                self.status_is_error = true;
                 self.toasts
                     .push(toast(&msg).title("Scan Error").level(ToastLevel::Error));
             }
@@ -153,10 +169,14 @@ impl WeakAuraImporter {
                 self.is_removing = false;
                 self.removal_message.clear();
                 if removed_count == 0 {
+                    self.status_message = "No auras removed (already absent).".to_string();
+                    self.status_is_error = false;
                     self.toasts.push(
                         toast("No auras were removed (already absent)").level(ToastLevel::Info),
                     );
                 } else {
+                    self.status_message = format!("Removed {} aura(s).", removed_count);
+                    self.status_is_error = false;
                     self.toasts.push(
                         toast(&format!("Removed {} aura(s)", removed_count))
                             .title("Success")
@@ -167,6 +187,8 @@ impl WeakAuraImporter {
             RemovalUpdate::Error(msg) => {
                 self.is_removing = false;
                 self.removal_message.clear();
+                self.status_message = format!("Removal failed: {}", msg);
+                self.status_is_error = true;
                 self.toasts
                     .push(toast(&msg).title("Removal Error").level(ToastLevel::Error));
             }

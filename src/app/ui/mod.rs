@@ -66,29 +66,24 @@ impl WeakAuraImporter {
             .spacing(spacing::MD)
             .align_y(iced::Alignment::Center);
 
-        // Add progress bar if loading or importing
-        if self.is_loading || self.is_importing {
-            let progress = if self.is_importing {
-                self.import_progress
-            } else {
-                self.loading_progress
-            };
-
+        // Add progress bar only during import
+        if self.is_importing {
             use iced::widget::progress_bar;
             use iced::Border;
 
             content = content.push(space::horizontal().width(Length::Fill));
             content = content.push(
                 container(
-                    progress_bar(0.0..=1.0, progress)
-                        .style(|_theme| progress_bar::Style {
+                    progress_bar(0.0..=1.0, self.import_progress).style(|_theme| {
+                        progress_bar::Style {
                             background: colors::BG_SURFACE.into(),
                             bar: colors::GOLD.into(),
                             border: Border::default().rounded(4.0),
-                        })
+                        }
+                    }),
                 )
                 .height(8.0)
-                .width(Length::Fixed(200.0))
+                .width(Length::Fixed(200.0)),
             );
         } else {
             content = content.push(space::horizontal().width(Length::Fill));
