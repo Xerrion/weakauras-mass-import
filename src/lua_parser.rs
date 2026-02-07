@@ -28,7 +28,7 @@ impl LuaParser {
         let mut saved = WeakAurasSaved::default();
 
         // Find WeakAurasSaved assignment
-        // Format: WeakAurasSaved = { ... } 
+        // Format: WeakAurasSaved = { ... }
         if let Some(start) = content.find("WeakAurasSaved") {
             if let Some(eq_pos) = content[start..].find('=') {
                 let table_start = start + eq_pos + 1;

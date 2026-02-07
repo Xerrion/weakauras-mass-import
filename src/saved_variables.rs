@@ -402,7 +402,7 @@ impl SavedVariablesManager {
                             .iter()
                             .map(|child_id| build_node(child_id, displays, children_map))
                             .collect();
-                        children.sort_by(|a, b| a.id.to_lowercase().cmp(&b.id.to_lowercase()));
+                        children.sort_by_key(|a| a.id.to_lowercase());
                         children
                     })
                     .unwrap_or_default()
@@ -643,9 +643,6 @@ pub struct ImportConflict {
     pub aura_id: String,
     /// The incoming (new) aura data
     pub incoming: LuaValue,
-    /// The existing aura data (kept for potential future comparison UI)
-    #[allow(dead_code)]
-    pub existing: LuaValue,
     /// Categories that have differences
     pub changed_categories: HashSet<UpdateCategory>,
     /// Whether this is a group
@@ -667,7 +664,6 @@ impl ImportConflict {
         Self {
             aura_id,
             incoming,
-            existing,
             changed_categories,
             is_group,
             child_count,

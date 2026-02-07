@@ -98,28 +98,25 @@ fn print_triggers_detail(value: &LuaValue) {
 }
 
 fn print_raw_triggers(value: &CodecLuaValue, path: &str) {
-    match value {
-        CodecLuaValue::Map(map) => {
-            if path.is_empty() || path == "d" {
-                // Look for triggers in the main aura data
-                for (k, v) in map.iter() {
-                    let key_str = match k.as_value() {
-                        CodecLuaValue::String(s) => s.clone(),
-                        CodecLuaValue::Number(n) => format!("{}", n),
-                        _ => continue,
-                    };
+    if let CodecLuaValue::Map(map) = value {
+        if path.is_empty() || path == "d" {
+            // Look for triggers in the main aura data
+            for (k, v) in map.iter() {
+                let key_str = match k.as_value() {
+                    CodecLuaValue::String(s) => s.clone(),
+                    CodecLuaValue::Number(n) => format!("{}", n),
+                    _ => continue,
+                };
 
-                    if key_str == "d" {
-                        // This is the aura data wrapper
-                        print_raw_triggers(v, "d");
-                    } else if key_str == "triggers" {
-                        println!("\n=== RAW TRIGGERS FROM CODEC ===");
-                        print_raw_map(v, 0);
-                    }
+                if key_str == "d" {
+                    // This is the aura data wrapper
+                    print_raw_triggers(v, "d");
+                } else if key_str == "triggers" {
+                    println!("\n=== RAW TRIGGERS FROM CODEC ===");
+                    print_raw_map(v, 0);
                 }
             }
         }
-        _ => {}
     }
 }
 
