@@ -16,7 +16,7 @@ use super::super::{Message, WeakAuraImporter};
 impl WeakAuraImporter {
     /// Import selected auras to SavedVariables (async with streaming progress)
     pub(crate) fn import_auras_async(&mut self) -> Task<Message> {
-        let Some(sv_path) = self.selected_sv_path.clone() else {
+        let Some(sv_path) = self.saved_vars.selected_path.clone() else {
             self.toasts.push(
                 toast("No SavedVariables file selected")
                     .title("Import Error")
@@ -42,9 +42,9 @@ impl WeakAuraImporter {
             return Task::none();
         }
 
-        self.is_importing = true;
-        self.import_progress = 0.0;
-        self.import_progress_message = "Starting import...".to_string();
+        self.tasks.is_importing = true;
+        self.tasks.import_progress = 0.0;
+        self.tasks.import_message = "Starting import...".to_string();
 
         Task::run(
             stream::channel(
@@ -59,7 +59,7 @@ impl WeakAuraImporter {
 
     /// Complete import with conflict resolutions (async with streaming progress)
     pub(crate) fn complete_import_with_resolutions_async(&mut self) -> Task<Message> {
-        let Some(sv_path) = self.selected_sv_path.clone() else {
+        let Some(sv_path) = self.saved_vars.selected_path.clone() else {
             self.toasts.push(
                 toast("No SavedVariables file selected")
                     .title("Import Error")
@@ -68,13 +68,14 @@ impl WeakAuraImporter {
             return Task::none();
         };
 
-        let Some(conflict_result) = self.conflict_result.take() else {
+        let Some(conflict_result) = self.conflicts.result.take() else {
             return Task::none();
         };
 
         // Convert UI resolutions to actual resolutions
         let resolutions: Vec<ConflictResolution> = self
-            .conflict_resolutions
+            .conflicts
+            .resolutions
             .iter()
             .map(|r| ConflictResolution {
                 aura_id: r.aura_id.clone(),
@@ -83,10 +84,10 @@ impl WeakAuraImporter {
             })
             .collect();
 
-        self.is_importing = true;
-        self.import_progress = 0.0;
-        self.import_progress_message = "Starting import...".to_string();
-        self.show_conflict_dialog = false;
+        self.tasks.is_importing = true;
+        self.tasks.import_progress = 0.0;
+        self.tasks.import_message = "Starting import...".to_string();
+        self.ui.show_conflict_dialog = false;
 
         Task::run(
             stream::channel(

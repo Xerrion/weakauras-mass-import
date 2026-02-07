@@ -16,14 +16,14 @@ use super::{collect_existing_ids, decode_auras_filtered, notify_decode_results};
 impl WeakAuraImporter {
     /// Scan for SavedVariables files (synchronous, called during init)
     pub(crate) fn scan_saved_variables_sync(&mut self) {
-        let path = PathBuf::from(&self.wow_path);
+        let path = PathBuf::from(&self.saved_vars.wow_path);
         if path.exists() {
-            self.discovered_sv_files = SavedVariablesManager::find_saved_variables(&path);
-            if !self.discovered_sv_files.is_empty() {
+            self.saved_vars.discovered_files = SavedVariablesManager::find_saved_variables(&path);
+            if !self.saved_vars.discovered_files.is_empty() {
                 self.toasts.push(
                     toast(&format!(
                         "Found {} SavedVariables file(s)",
-                        self.discovered_sv_files.len()
+                        self.saved_vars.discovered_files.len()
                     ))
                     .level(ToastLevel::Info),
                 );
@@ -82,9 +82,9 @@ impl WeakAuraImporter {
     pub(crate) fn load_file_content_async(&mut self, path: PathBuf) -> Task<Message> {
         let existing_ids = collect_existing_ids(&self.parsed_auras);
 
-        self.is_loading = true;
-        self.loading_progress = 0.0;
-        self.loading_message = format!("Loading {}...", path.display());
+        self.tasks.is_loading = true;
+        self.tasks.loading_progress = 0.0;
+        self.tasks.loading_message = format!("Loading {}...", path.display());
 
         Task::perform(
             async move {
@@ -143,9 +143,9 @@ impl WeakAuraImporter {
 
         let existing_ids = collect_existing_ids(&self.parsed_auras);
 
-        self.is_loading = true;
-        self.loading_progress = 0.0;
-        self.loading_message = format!("Processing {} file(s)...", file_paths.len());
+        self.tasks.is_loading = true;
+        self.tasks.loading_progress = 0.0;
+        self.tasks.loading_message = format!("Processing {} file(s)...", file_paths.len());
 
         let total_files = file_paths.len();
 

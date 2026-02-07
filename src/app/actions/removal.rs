@@ -12,12 +12,12 @@ use super::super::{Message, WeakAuraImporter};
 impl WeakAuraImporter {
     /// Load existing auras from selected SavedVariables file (async)
     pub(crate) fn load_existing_auras_async(&mut self) -> Task<Message> {
-        let Some(sv_path) = self.selected_sv_path.clone() else {
+        let Some(sv_path) = self.saved_vars.selected_path.clone() else {
             return Task::none();
         };
 
-        self.is_scanning = true;
-        self.scanning_message = "Loading SavedVariables...".to_string();
+        self.tasks.is_scanning = true;
+        self.tasks.scanning_message = "Loading SavedVariables...".to_string();
 
         Task::perform(
             async move {
@@ -45,7 +45,7 @@ impl WeakAuraImporter {
 
     /// Remove selected auras from SavedVariables (async)
     pub(crate) fn remove_auras_async(&mut self) -> Task<Message> {
-        let Some(sv_path) = self.selected_sv_path.clone() else {
+        let Some(sv_path) = self.saved_vars.selected_path.clone() else {
             self.toasts.push(
                 toast("No SavedVariables file selected")
                     .title("Removal Error")
@@ -54,13 +54,13 @@ impl WeakAuraImporter {
             return Task::none();
         };
 
-        let ids = std::mem::take(&mut self.pending_removal_ids);
+        let ids = std::mem::take(&mut self.removal.pending_ids);
         if ids.is_empty() {
             return Task::none();
         }
 
-        self.is_removing = true;
-        self.removal_message = "Removing auras...".to_string();
+        self.tasks.is_removing = true;
+        self.tasks.removal_message = "Removing auras...".to_string();
 
         Task::perform(
             async move {

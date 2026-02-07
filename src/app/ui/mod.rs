@@ -26,7 +26,7 @@ impl WeakAuraImporter {
             .style(theme::button_frameless)
             .on_press(Message::ClearInput);
 
-        let view_label = if self.show_decoded_view {
+        let view_label = if self.ui.show_decoded_view {
             "Hide JSON"
         } else {
             "Show JSON"
@@ -35,7 +35,7 @@ impl WeakAuraImporter {
             .style(theme::button_frameless)
             .on_press(Message::ToggleDecodedView);
 
-        let setup_label = if self.selected_sv_path.is_some() {
+        let setup_label = if self.saved_vars.selected_path.is_some() {
             "Change Install"
         } else {
             "Select Install"
@@ -52,13 +52,13 @@ impl WeakAuraImporter {
 
     /// Render the status bar
     pub(crate) fn render_status_bar(&self) -> Element<'_, Message> {
-        let status_color = if self.status_is_error {
+        let status_color = if self.status.is_error {
             colors::ERROR
         } else {
             colors::TEXT_SECONDARY
         };
 
-        let status_text = text(&self.status_message)
+        let status_text = text(&self.status.message)
             .size(typography::CAPTION)
             .color(status_color);
 
@@ -67,24 +67,23 @@ impl WeakAuraImporter {
             .align_y(iced::Alignment::Center);
 
         // Add progress bar only during import
-        if self.is_importing {
+        if self.tasks.is_importing {
             use iced::widget::progress_bar;
             use iced::Border;
 
             content = content.push(space::horizontal().width(Length::Fill));
-            content = content.push(
-                container(
-                    progress_bar(0.0..=1.0, self.import_progress).style(|_theme| {
-                        progress_bar::Style {
+            content =
+                content.push(
+                    container(progress_bar(0.0..=1.0, self.tasks.import_progress).style(
+                        |_theme| progress_bar::Style {
                             background: colors::BG_SURFACE.into(),
                             bar: colors::GOLD.into(),
                             border: Border::default().rounded(4.0),
-                        }
-                    }),
-                )
-                .height(8.0)
-                .width(Length::Fixed(200.0)),
-            );
+                        },
+                    ))
+                    .height(8.0)
+                    .width(Length::Fixed(200.0)),
+                );
         } else {
             content = content.push(space::horizontal().width(Length::Fill));
         }
