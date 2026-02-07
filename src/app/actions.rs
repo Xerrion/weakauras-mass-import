@@ -460,4 +460,46 @@ impl WeakAuraImporter {
         self.status_message = msg.to_string();
         self.status_is_error = true;
     }
+
+    /// Remove selected auras from SavedVariables (called after confirmation).
+    pub(crate) fn remove_confirmed_auras(&mut self) {
+        let Some(sv_path) = &self.selected_sv_path else {
+            self.set_error("No SavedVariables file selected");
+            return;
+        };
+
+        let ids = std::mem::take(&mut self.pending_removal_ids);
+        if ids.is_empty() {
+            return;
+        }
+
+        let mut manager = SavedVariablesManager::new(sv_path.clone());
+
+        if let Err(e) = manager.load() {
+            if !matches!(e, WeakAuraError::FileNotFound(_)) {
+                self.set_error(&format!("Failed to load SavedVariables: {}", e));
+                return;
+            }
+        }
+
+        let removed = manager.remove_auras(&ids);
+
+        if removed.is_empty() {
+            self.set_status("No auras were removed (already absent)");
+            return;
+        }
+
+        if let Err(e) = manager.save() {
+            self.set_error(&format!("Failed to save: {}", e));
+            return;
+        }
+
+        self.set_status(&format!("Removed {} aura(s)", removed.len()));
+
+        // Refresh existing auras tree
+        let tree = manager.get_aura_tree();
+        self.existing_auras_count = tree.iter().map(|n| n.total_count()).sum();
+        self.existing_auras_tree = tree;
+        self.selected_for_removal.clear();
+    }
 }

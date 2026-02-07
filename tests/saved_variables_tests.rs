@@ -1,5 +1,6 @@
 //! Tests for SavedVariables management and hierarchy preservation.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use weakaura_mass_import::decoder::{LuaValue, WeakAuraDecoder};
@@ -120,4 +121,143 @@ fn test_add_auras_preserves_hierarchy() {
         root_children_count
     );
     println!("  Total displays: {}", manager.displays.len());
+}
+
+/// Helper: create a simple non-group aura table.
+fn make_aura(id: &str, parent: Option<&str>) -> LuaValue {
+    let mut table = HashMap::new();
+    table.insert("id".to_string(), LuaValue::String(id.to_string()));
+    table.insert(
+        "regionType".to_string(),
+        LuaValue::String("icon".to_string()),
+    );
+    if let Some(p) = parent {
+        table.insert("parent".to_string(), LuaValue::String(p.to_string()));
+    }
+    LuaValue::Table(table)
+}
+
+/// Helper: create a group aura table with controlledChildren.
+fn make_group(id: &str, parent: Option<&str>, children: &[&str]) -> LuaValue {
+    let mut table = HashMap::new();
+    table.insert("id".to_string(), LuaValue::String(id.to_string()));
+    table.insert(
+        "regionType".to_string(),
+        LuaValue::String("group".to_string()),
+    );
+    if let Some(p) = parent {
+        table.insert("parent".to_string(), LuaValue::String(p.to_string()));
+    }
+    let controlled: Vec<LuaValue> = children
+        .iter()
+        .map(|c| LuaValue::String(c.to_string()))
+        .collect();
+    table.insert(
+        "controlledChildren".to_string(),
+        LuaValue::Array(controlled),
+    );
+    LuaValue::Table(table)
+}
+
+/// Helper: build a manager with pre-populated displays (no file needed).
+fn manager_with_displays(displays: HashMap<String, LuaValue>) -> SavedVariablesManager {
+    let mut mgr = SavedVariablesManager::new(PathBuf::from("test_remove.lua"));
+    mgr.displays = displays;
+    mgr
+}
+
+#[test]
+fn test_remove_standalone_aura() {
+    let mut displays = HashMap::new();
+    displays.insert("Aura1".to_string(), make_aura("Aura1", None));
+    displays.insert("Aura2".to_string(), make_aura("Aura2", None));
+    displays.insert("Aura3".to_string(), make_aura("Aura3", None));
+
+    let mut mgr = manager_with_displays(displays);
+    assert_eq!(mgr.displays.len(), 3);
+
+    let removed = mgr.remove_auras(&["Aura2".to_string()]);
+
+    assert_eq!(removed, vec!["Aura2".to_string()]);
+    assert_eq!(mgr.displays.len(), 2);
+    assert!(mgr.displays.contains_key("Aura1"));
+    assert!(!mgr.displays.contains_key("Aura2"));
+    assert!(mgr.displays.contains_key("Aura3"));
+}
+
+#[test]
+fn test_remove_group_removes_all_descendants() {
+    // Group hierarchy: RootGroup -> [ChildA, SubGroup -> [GrandchildX]]
+    let mut displays = HashMap::new();
+    displays.insert(
+        "RootGroup".to_string(),
+        make_group("RootGroup", None, &["ChildA", "SubGroup"]),
+    );
+    displays.insert("ChildA".to_string(), make_aura("ChildA", Some("RootGroup")));
+    displays.insert(
+        "SubGroup".to_string(),
+        make_group("SubGroup", Some("RootGroup"), &["GrandchildX"]),
+    );
+    displays.insert(
+        "GrandchildX".to_string(),
+        make_aura("GrandchildX", Some("SubGroup")),
+    );
+    displays.insert("Standalone".to_string(), make_aura("Standalone", None));
+
+    let mut mgr = manager_with_displays(displays);
+    assert_eq!(mgr.displays.len(), 5);
+
+    let mut removed = mgr.remove_auras(&["RootGroup".to_string()]);
+    removed.sort();
+
+    assert_eq!(
+        removed,
+        vec![
+            "ChildA".to_string(),
+            "GrandchildX".to_string(),
+            "RootGroup".to_string(),
+            "SubGroup".to_string(),
+        ]
+    );
+    // Only the standalone should remain
+    assert_eq!(mgr.displays.len(), 1);
+    assert!(mgr.displays.contains_key("Standalone"));
+}
+
+#[test]
+fn test_remove_child_updates_parent_controlled_children() {
+    // Group with two children; remove one, verify parent's controlledChildren updated
+    let mut displays = HashMap::new();
+    displays.insert(
+        "MyGroup".to_string(),
+        make_group("MyGroup", None, &["Child1", "Child2"]),
+    );
+    displays.insert("Child1".to_string(), make_aura("Child1", Some("MyGroup")));
+    displays.insert("Child2".to_string(), make_aura("Child2", Some("MyGroup")));
+
+    let mut mgr = manager_with_displays(displays);
+
+    let removed = mgr.remove_auras(&["Child1".to_string()]);
+    assert_eq!(removed, vec!["Child1".to_string()]);
+    assert_eq!(mgr.displays.len(), 2);
+
+    // Verify parent's controlledChildren now only has Child2
+    let group = mgr.displays.get("MyGroup").unwrap();
+    let table = group.as_table().unwrap();
+    let controlled = table.get("controlledChildren").unwrap();
+    let arr = controlled.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0], LuaValue::String("Child2".to_string()));
+}
+
+#[test]
+fn test_remove_nonexistent_returns_empty() {
+    let mut displays = HashMap::new();
+    displays.insert("Aura1".to_string(), make_aura("Aura1", None));
+
+    let mut mgr = manager_with_displays(displays);
+
+    let removed = mgr.remove_auras(&["DoesNotExist".to_string()]);
+    assert!(removed.is_empty());
+    assert_eq!(mgr.displays.len(), 1);
 }

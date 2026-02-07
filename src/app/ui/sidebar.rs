@@ -142,6 +142,41 @@ impl WeakAuraImporter {
                         }
                     });
 
+                    // Selection & removal controls
+                    ui.horizontal(|ui| {
+                        if ui.small_button("Select all").clicked() {
+                            fn collect_ids(node: &AuraTreeNode, set: &mut HashSet<String>) {
+                                set.insert(node.id.clone());
+                                for child in &node.children {
+                                    collect_ids(child, set);
+                                }
+                            }
+                            for node in &self.existing_auras_tree {
+                                collect_ids(node, &mut self.selected_for_removal);
+                            }
+                        }
+                        if ui.small_button("Deselect all").clicked() {
+                            self.selected_for_removal.clear();
+                        }
+
+                        if !self.selected_for_removal.is_empty() {
+                            let count = self.selected_for_removal.len();
+                            let remove_btn = egui::Button::new(
+                                egui::RichText::new(format!("Remove ({})", count))
+                                    .color(theme::colors::BG_DARKEST)
+                                    .small(),
+                            )
+                            .fill(theme::colors::ERROR);
+                            if ui.add(remove_btn).clicked() {
+                                // Only keep top-level selections (children of selected groups
+                                // will be removed recursively by the backend)
+                                self.pending_removal_ids =
+                                    self.selected_for_removal.iter().cloned().collect();
+                                self.show_remove_confirm = true;
+                            }
+                        }
+                    });
+
                     ui.add_space(4.0);
 
                     // Scrollable aura tree
@@ -182,6 +217,16 @@ impl WeakAuraImporter {
 
         ui.horizontal(|ui| {
             ui.add_space(indent);
+
+            // Selection checkbox for removal
+            let mut is_selected = self.selected_for_removal.contains(&node.id);
+            if ui.checkbox(&mut is_selected, "").changed() {
+                if is_selected {
+                    self.selected_for_removal.insert(node.id.clone());
+                } else {
+                    self.selected_for_removal.remove(&node.id);
+                }
+            }
 
             if node.is_group {
                 let is_expanded = self.expanded_groups.contains(&node.id);

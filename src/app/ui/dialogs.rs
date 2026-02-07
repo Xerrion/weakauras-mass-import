@@ -184,6 +184,71 @@ impl WeakAuraImporter {
             });
     }
 
+    pub(crate) fn render_remove_confirmation(&mut self, ctx: &egui::Context) {
+        if !self.show_remove_confirm {
+            return;
+        }
+
+        egui::Window::new("Confirm Removal")
+            .collapsible(false)
+            .resizable(true)
+            .min_width(400.0)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                let count = self.pending_removal_ids.len();
+                ui.label(
+                    egui::RichText::new(format!("Remove {} aura(s) from SavedVariables?", count))
+                        .strong(),
+                );
+                ui.add_space(4.0);
+                ui.label(theme::muted_text(
+                    "Groups will have all their children removed recursively.",
+                ));
+                ui.add_space(8.0);
+
+                // Scrollable list of IDs to be removed
+                egui::Frame::group(ui.style())
+                    .fill(theme::colors::BG_ELEVATED)
+                    .stroke(egui::Stroke::new(1.0, theme::colors::BORDER))
+                    .inner_margin(4.0)
+                    .show(ui, |ui| {
+                        egui::ScrollArea::vertical()
+                            .max_height(200.0)
+                            .show(ui, |ui| {
+                                for id in &self.pending_removal_ids.clone() {
+                                    ui.label(
+                                        egui::RichText::new(id)
+                                            .color(theme::colors::TEXT_SECONDARY),
+                                    );
+                                }
+                            });
+                    });
+
+                ui.add_space(12.0);
+
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        self.show_remove_confirm = false;
+                        self.pending_removal_ids.clear();
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let remove_btn = egui::Button::new(
+                            egui::RichText::new("Remove")
+                                .color(theme::colors::BG_DARKEST)
+                                .strong(),
+                        )
+                        .fill(theme::colors::ERROR);
+
+                        if ui.add(remove_btn).clicked() {
+                            self.show_remove_confirm = false;
+                            self.remove_confirmed_auras();
+                        }
+                    });
+                });
+            });
+    }
+
     fn render_conflict_item(&mut self, ui: &mut egui::Ui, idx: usize, conflict: &ImportConflict) {
         let resolution = &mut self.conflict_resolutions[idx];
 

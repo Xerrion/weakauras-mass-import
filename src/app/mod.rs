@@ -68,6 +68,12 @@ pub struct WeakAuraImporter {
     pub(crate) is_importing: bool,
     /// Import progress message
     pub(crate) import_progress_message: String,
+    /// Auras selected for removal in the sidebar
+    pub(crate) selected_for_removal: HashSet<String>,
+    /// Show removal confirmation dialog
+    pub(crate) show_remove_confirm: bool,
+    /// IDs pending removal (populated when confirm dialog opens)
+    pub(crate) pending_removal_ids: Vec<String>,
 }
 
 impl Default for WeakAuraImporter {
@@ -97,6 +103,9 @@ impl Default for WeakAuraImporter {
             import_progress: 0.0,
             is_importing: false,
             import_progress_message: String::new(),
+            selected_for_removal: HashSet::new(),
+            show_remove_confirm: false,
+            pending_removal_ids: Vec::new(),
         }
     }
 }
@@ -111,5 +120,6 @@ impl eframe::App for WeakAuraImporter {
         self.render_main_content(ctx);
         self.render_import_confirmation(ctx);
         self.render_conflict_dialog(ctx);
+        self.render_remove_confirmation(ctx);
     }
 }

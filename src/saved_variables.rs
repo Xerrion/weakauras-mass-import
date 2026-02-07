@@ -439,6 +439,83 @@ impl SavedVariablesManager {
         nodes
     }
 
+    /// Remove auras by ID, recursively removing children of groups.
+    ///
+    /// For each ID:
+    /// - If it's a group, all descendants are also removed.
+    /// - If it has a parent, the parent's `controlledChildren` is updated.
+    ///
+    /// Returns the list of all IDs that were actually removed.
+    pub fn remove_auras(&mut self, ids: &[String]) -> Vec<String> {
+        let mut removed = Vec::new();
+
+        for id in ids {
+            // Collect this aura and all its descendants
+            let to_remove = self.collect_descendants(id);
+
+            // Find the parent of the top-level aura being removed
+            let parent_id = self
+                .displays
+                .get(id)
+                .and_then(|d| d.as_table())
+                .and_then(|t| t.get("parent"))
+                .and_then(|v| {
+                    if let LuaValue::String(s) = v {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                });
+
+            // Remove all collected auras from displays
+            for remove_id in &to_remove {
+                if self.displays.remove(remove_id).is_some() {
+                    removed.push(remove_id.clone());
+                }
+            }
+
+            // Update parent's controlledChildren if applicable
+            if let Some(parent_id) = parent_id {
+                if let Some(parent_data) = self.displays.get_mut(&parent_id) {
+                    if let Some(table) = parent_data.as_table_mut() {
+                        if let Some(LuaValue::Array(children)) = table.get_mut("controlledChildren")
+                        {
+                            children.retain(|v| {
+                                if let LuaValue::String(child_id) = v {
+                                    child_id != id
+                                } else {
+                                    true
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        removed
+    }
+
+    /// Collect an aura ID and all its descendant IDs (recursive).
+    fn collect_descendants(&self, id: &str) -> Vec<String> {
+        let mut result = vec![id.to_string()];
+
+        // Check if this aura has controlledChildren
+        if let Some(data) = self.displays.get(id) {
+            if let Some(table) = data.as_table() {
+                if let Some(LuaValue::Array(children)) = table.get("controlledChildren") {
+                    for child in children {
+                        if let LuaValue::String(child_id) = child {
+                            result.extend(self.collect_descendants(child_id));
+                        }
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
     /// Save the SavedVariables back to file
     pub fn save(&self) -> Result<()> {
         // Create backup first
