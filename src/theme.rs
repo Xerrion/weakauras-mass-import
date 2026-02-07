@@ -1,112 +1,303 @@
 //! Theme configuration for WeakAura Mass Import
 //!
-//! Dark theme with WoW-inspired gold accents.
+//! Dark theme with WoW-inspired gold accents for iced.
 
-use eframe::egui::{self, Rounding, Stroke, Style, Visuals};
+use iced::widget::{button, container, text_input};
+use iced::{Border, Color, Theme};
 
 /// Color palette - WoW-inspired dark theme with gold accents
 pub mod colors {
-    use eframe::egui::Color32;
+    use iced::Color;
 
     // Backgrounds
-    pub const BG_DARKEST: Color32 = Color32::from_rgb(0x0d, 0x0d, 0x0d); // #0d0d0d
-    pub const BG_DARK: Color32 = Color32::from_rgb(0x11, 0x11, 0x11); // #111111
-    pub const BG_PANEL: Color32 = Color32::from_rgb(0x1a, 0x1a, 0x1a); // #1a1a1a
-    pub const BG_ELEVATED: Color32 = Color32::from_rgb(0x22, 0x22, 0x22); // #222222
-    pub const BG_HOVER: Color32 = Color32::from_rgb(0x2a, 0x2a, 0x2a); // #2a2a2a
-    pub const BG_SELECTED: Color32 = Color32::from_rgb(0x33, 0x33, 0x33); // #333333
+    pub const BG_DARKEST: Color = Color::from_rgb(
+        0x0d as f32 / 255.0,
+        0x0d as f32 / 255.0,
+        0x0d as f32 / 255.0,
+    );
+    pub const BG_DARK: Color = Color::from_rgb(
+        0x11 as f32 / 255.0,
+        0x11 as f32 / 255.0,
+        0x11 as f32 / 255.0,
+    );
+    pub const BG_PANEL: Color = Color::from_rgb(
+        0x1a as f32 / 255.0,
+        0x1a as f32 / 255.0,
+        0x1a as f32 / 255.0,
+    );
+    pub const BG_ELEVATED: Color = Color::from_rgb(
+        0x22 as f32 / 255.0,
+        0x22 as f32 / 255.0,
+        0x22 as f32 / 255.0,
+    );
+    pub const BG_HOVER: Color = Color::from_rgb(
+        0x2a as f32 / 255.0,
+        0x2a as f32 / 255.0,
+        0x2a as f32 / 255.0,
+    );
+    pub const BG_SELECTED: Color = Color::from_rgb(
+        0x33 as f32 / 255.0,
+        0x33 as f32 / 255.0,
+        0x33 as f32 / 255.0,
+    );
 
     // Accent - WoW Gold
-    pub const GOLD: Color32 = Color32::from_rgb(0xf8, 0xb7, 0x00); // #f8b700
-    pub const GOLD_LIGHT: Color32 = Color32::from_rgb(0xff, 0xcc, 0x33); // #ffcc33
-    pub const GOLD_DARK: Color32 = Color32::from_rgb(0x8a, 0x64, 0x00); // #8a6400
+    pub const GOLD: Color = Color::from_rgb(
+        0xf8 as f32 / 255.0,
+        0xb7 as f32 / 255.0,
+        0x00 as f32 / 255.0,
+    );
+    pub const GOLD_LIGHT: Color = Color::from_rgb(
+        0xff as f32 / 255.0,
+        0xcc as f32 / 255.0,
+        0x33 as f32 / 255.0,
+    );
+    pub const GOLD_DARK: Color = Color::from_rgb(
+        0x8a as f32 / 255.0,
+        0x64 as f32 / 255.0,
+        0x00 as f32 / 255.0,
+    );
 
     // Text
-    pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(0xe8, 0xe8, 0xe8); // #e8e8e8
-    pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(0xa0, 0xa0, 0xa0); // #a0a0a0
-    pub const TEXT_MUTED: Color32 = Color32::from_rgb(0x70, 0x70, 0x70); // #707070
+    pub const TEXT_PRIMARY: Color = Color::from_rgb(
+        0xe8 as f32 / 255.0,
+        0xe8 as f32 / 255.0,
+        0xe8 as f32 / 255.0,
+    );
+    pub const TEXT_SECONDARY: Color = Color::from_rgb(
+        0xa0 as f32 / 255.0,
+        0xa0 as f32 / 255.0,
+        0xa0 as f32 / 255.0,
+    );
+    pub const TEXT_MUTED: Color = Color::from_rgb(
+        0x70 as f32 / 255.0,
+        0x70 as f32 / 255.0,
+        0x70 as f32 / 255.0,
+    );
 
     // Status colors
-    pub const SUCCESS: Color32 = Color32::from_rgb(0x4c, 0xaf, 0x50); // #4caf50
-    pub const ERROR: Color32 = Color32::from_rgb(0xff, 0x44, 0x44); // #ff4444
+    pub const SUCCESS: Color = Color::from_rgb(
+        0x4c as f32 / 255.0,
+        0xaf as f32 / 255.0,
+        0x50 as f32 / 255.0,
+    );
+    pub const ERROR: Color = Color::from_rgb(
+        0xff as f32 / 255.0,
+        0x44 as f32 / 255.0,
+        0x44 as f32 / 255.0,
+    );
 
     // Borders
-    pub const BORDER: Color32 = Color32::from_rgb(0x3a, 0x3a, 0x3a); // #3a3a3a
+    pub const BORDER: Color = Color::from_rgb(
+        0x3a as f32 / 255.0,
+        0x3a as f32 / 255.0,
+        0x3a as f32 / 255.0,
+    );
 }
 
-/// Configure the egui context with our custom theme
-pub fn configure_theme(ctx: &egui::Context) {
-    let mut style = Style::default();
-    let mut visuals = Visuals::dark();
-
-    // Window styling
-    visuals.window_fill = colors::BG_PANEL;
-    visuals.window_stroke = Stroke::new(1.0, colors::BORDER);
-    visuals.window_rounding = Rounding::same(8.0);
-
-    // Panel styling
-    visuals.panel_fill = colors::BG_DARK;
-
-    // Widget colors
-    visuals.widgets.noninteractive.bg_fill = colors::BG_ELEVATED;
-    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, colors::TEXT_SECONDARY);
-    visuals.widgets.noninteractive.rounding = Rounding::same(4.0);
-
-    visuals.widgets.inactive.bg_fill = colors::BG_ELEVATED;
-    visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, colors::TEXT_PRIMARY);
-    visuals.widgets.inactive.rounding = Rounding::same(4.0);
-
-    visuals.widgets.hovered.bg_fill = colors::BG_HOVER;
-    visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, colors::GOLD_LIGHT);
-    visuals.widgets.hovered.rounding = Rounding::same(4.0);
-
-    visuals.widgets.active.bg_fill = colors::GOLD_DARK;
-    visuals.widgets.active.fg_stroke = Stroke::new(1.0, colors::TEXT_PRIMARY);
-    visuals.widgets.active.rounding = Rounding::same(4.0);
-
-    visuals.widgets.open.bg_fill = colors::BG_SELECTED;
-    visuals.widgets.open.fg_stroke = Stroke::new(1.0, colors::GOLD);
-    visuals.widgets.open.rounding = Rounding::same(4.0);
-
-    // Selection
-    visuals.selection.bg_fill = colors::GOLD_DARK;
-    visuals.selection.stroke = Stroke::new(1.0, colors::GOLD);
-
-    // Hyperlinks
-    visuals.hyperlink_color = colors::GOLD_LIGHT;
-
-    // Extreme background (behind everything)
-    visuals.extreme_bg_color = colors::BG_DARKEST;
-
-    // Faint color for subtle backgrounds
-    visuals.faint_bg_color = colors::BG_PANEL;
-
-    // Text cursor
-    visuals.text_cursor.stroke = Stroke::new(2.0, colors::GOLD);
-
-    // Striped background
-    visuals.striped = true;
-
-    // Apply visuals
-    style.visuals = visuals;
-
-    // Spacing adjustments
-    style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-    style.spacing.button_padding = egui::vec2(12.0, 6.0);
-    style.spacing.window_margin = egui::Margin::same(12.0);
-
-    ctx.set_style(style);
+/// Create the custom iced theme
+pub fn create_theme() -> Theme {
+    Theme::custom(
+        "WeakAura Dark".to_string(),
+        iced::theme::Palette {
+            background: colors::BG_DARK,
+            text: colors::TEXT_PRIMARY,
+            primary: colors::GOLD,
+            success: colors::SUCCESS,
+            warning: colors::GOLD_DARK, // WoW-like warning color
+            danger: colors::ERROR,
+        },
+    )
 }
 
-/// Helper to create a step header (e.g., "Step 1: Select File")
-pub fn step_header(step: u32, text: &str) -> egui::RichText {
-    egui::RichText::new(format!("Step {}: {}", step, text))
-        .color(colors::GOLD)
-        .size(16.0)
-        .strong()
+/// Custom button style - primary gold button
+pub fn button_primary(_theme: &Theme, status: button::Status) -> button::Style {
+    let base = button::Style {
+        background: Some(colors::GOLD.into()),
+        text_color: colors::BG_DARKEST,
+        border: Border::default().rounded(4.0),
+        ..Default::default()
+    };
+
+    match status {
+        button::Status::Active => base,
+        button::Status::Hovered => button::Style {
+            background: Some(colors::GOLD_LIGHT.into()),
+            ..base
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(colors::GOLD_DARK.into()),
+            ..base
+        },
+        button::Status::Disabled => button::Style {
+            background: Some(colors::BG_ELEVATED.into()),
+            text_color: colors::TEXT_MUTED,
+            ..base
+        },
+    }
 }
 
-/// Helper to create a secondary/muted label
-pub fn muted_text(text: &str) -> egui::RichText {
-    egui::RichText::new(text).color(colors::TEXT_MUTED)
+/// Custom button style - secondary button
+pub fn button_secondary(_theme: &Theme, status: button::Status) -> button::Style {
+    let base = button::Style {
+        background: Some(colors::BG_ELEVATED.into()),
+        text_color: colors::TEXT_PRIMARY,
+        border: Border::default()
+            .rounded(4.0)
+            .color(colors::BORDER)
+            .width(1.0),
+        ..Default::default()
+    };
+
+    match status {
+        button::Status::Active => base,
+        button::Status::Hovered => button::Style {
+            background: Some(colors::BG_HOVER.into()),
+            text_color: colors::GOLD_LIGHT,
+            ..base
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(colors::BG_SELECTED.into()),
+            ..base
+        },
+        button::Status::Disabled => button::Style {
+            text_color: colors::TEXT_MUTED,
+            ..base
+        },
+    }
+}
+
+/// Custom button style - danger/error button
+pub fn button_danger(_theme: &Theme, status: button::Status) -> button::Style {
+    let base = button::Style {
+        background: Some(colors::ERROR.into()),
+        text_color: colors::BG_DARKEST,
+        border: Border::default().rounded(4.0),
+        ..Default::default()
+    };
+
+    match status {
+        button::Status::Active => base,
+        button::Status::Hovered => button::Style {
+            background: Some(Color::from_rgb(1.0, 0.4, 0.4).into()),
+            ..base
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(Color::from_rgb(0.8, 0.2, 0.2).into()),
+            ..base
+        },
+        button::Status::Disabled => button::Style {
+            background: Some(colors::BG_ELEVATED.into()),
+            text_color: colors::TEXT_MUTED,
+            ..base
+        },
+    }
+}
+
+/// Custom button style - small/frameless button
+pub fn button_frameless(_theme: &Theme, status: button::Status) -> button::Style {
+    let base = button::Style {
+        background: None,
+        text_color: colors::TEXT_SECONDARY,
+        border: Border::default(),
+        ..Default::default()
+    };
+
+    match status {
+        button::Status::Active => base,
+        button::Status::Hovered => button::Style {
+            text_color: colors::GOLD_LIGHT,
+            ..base
+        },
+        button::Status::Pressed => button::Style {
+            text_color: colors::GOLD,
+            ..base
+        },
+        button::Status::Disabled => button::Style {
+            text_color: colors::TEXT_MUTED,
+            ..base
+        },
+    }
+}
+
+/// Custom container style - panel
+pub fn container_panel(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(colors::BG_PANEL.into()),
+        border: Border::default()
+            .rounded(0.0)
+            .color(colors::BORDER)
+            .width(1.0),
+        ..Default::default()
+    }
+}
+
+/// Custom container style - elevated (like a card)
+pub fn container_elevated(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(colors::BG_ELEVATED.into()),
+        border: Border::default()
+            .rounded(4.0)
+            .color(colors::BORDER)
+            .width(1.0),
+        ..Default::default()
+    }
+}
+
+/// Custom container style - modal overlay background
+pub fn container_modal_backdrop(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Color::from_rgba(0.0, 0.0, 0.0, 0.7).into()),
+        ..Default::default()
+    }
+}
+
+/// Custom container style - modal dialog
+pub fn container_modal(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(colors::BG_PANEL.into()),
+        border: Border::default()
+            .rounded(8.0)
+            .color(colors::BORDER)
+            .width(1.0),
+        ..Default::default()
+    }
+}
+
+/// Custom text input style
+pub fn text_input_style(_theme: &Theme, status: text_input::Status) -> text_input::Style {
+    let base = text_input::Style {
+        background: colors::BG_ELEVATED.into(),
+        border: Border::default()
+            .rounded(4.0)
+            .color(colors::BORDER)
+            .width(1.0),
+        icon: colors::TEXT_MUTED,
+        placeholder: colors::TEXT_MUTED,
+        value: colors::TEXT_PRIMARY,
+        selection: colors::GOLD_DARK,
+    };
+
+    match status {
+        text_input::Status::Active => base,
+        text_input::Status::Hovered => text_input::Style {
+            border: Border::default()
+                .rounded(4.0)
+                .color(colors::GOLD_DARK)
+                .width(1.0),
+            ..base
+        },
+        text_input::Status::Focused { is_hovered: _ } => text_input::Style {
+            border: Border::default()
+                .rounded(4.0)
+                .color(colors::GOLD)
+                .width(2.0),
+            ..base
+        },
+        text_input::Status::Disabled => text_input::Style {
+            background: colors::BG_DARK.into(),
+            value: colors::TEXT_MUTED,
+            ..base
+        },
+    }
 }

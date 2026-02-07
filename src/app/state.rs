@@ -7,8 +7,8 @@ use crate::decoder::{ValidationResult, WeakAura};
 use crate::saved_variables::{AuraTreeNode, ConflictAction, ConflictDetectionResult, ImportResult};
 
 /// Entry for a parsed aura in the list
-#[derive(Clone)]
-pub(crate) struct ParsedAuraEntry {
+#[derive(Clone, Debug)]
+pub struct ParsedAuraEntry {
     pub validation: ValidationResult,
     pub aura: Option<WeakAura>,
     pub selected: bool,
@@ -17,8 +17,8 @@ pub(crate) struct ParsedAuraEntry {
 }
 
 /// UI state for a single conflict resolution
-#[derive(Clone)]
-pub(crate) struct ConflictResolutionUI {
+#[derive(Clone, Debug)]
+pub struct ConflictResolutionUI {
     /// The conflict this resolves
     pub aura_id: String,
     /// Current action
@@ -30,9 +30,10 @@ pub(crate) struct ConflictResolutionUI {
 }
 
 /// Progress update from background loading task
-#[derive(Clone)]
-pub(crate) enum LoadingUpdate {
+#[derive(Clone, Debug)]
+pub enum LoadingUpdate {
     /// Incremental progress report
+    #[allow(dead_code)]
     Progress {
         current: usize,
         total: usize,
@@ -50,8 +51,10 @@ pub(crate) enum LoadingUpdate {
 }
 
 /// Progress update from background import task
-pub(crate) enum ImportUpdate {
+#[derive(Clone, Debug)]
+pub enum ImportUpdate {
     /// Incremental progress report
+    #[allow(dead_code)]
     Progress { progress: f32, message: String },
     /// Conflicts detected — hand data back to UI for resolution
     ConflictsDetected(ConflictDetectionResult),
@@ -66,8 +69,10 @@ pub(crate) enum ImportUpdate {
 }
 
 /// Progress update from background SavedVariables scanning task
-pub(crate) enum ScanUpdate {
+#[derive(Clone, Debug)]
+pub enum ScanUpdate {
     /// Progress message
+    #[allow(dead_code)]
     Progress { message: String },
     /// Scanning completed successfully
     Complete {
@@ -79,8 +84,10 @@ pub(crate) enum ScanUpdate {
 }
 
 /// Progress update from background aura removal task
-pub(crate) enum RemovalUpdate {
+#[derive(Clone, Debug)]
+pub enum RemovalUpdate {
     /// Progress message
+    #[allow(dead_code)]
     Progress { message: String },
     /// Removal completed successfully
     Complete {

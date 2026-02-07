@@ -1,85 +1,102 @@
-//! Top-level UI rendering: menu bar, status bar, decoded panel.
+//! UI rendering components for iced.
 
 mod dialogs;
 mod main_panel;
 mod sidebar;
 
-use eframe::egui;
+use iced::widget::{button, column, container, row, space, text};
+use iced::{Element, Length};
 
-use super::WeakAuraImporter;
+use crate::theme::{self, colors};
+
+use super::{Message, WeakAuraImporter};
 
 impl WeakAuraImporter {
-    pub(crate) fn render_menu_bar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("Load from file...").clicked() {
-                        self.load_from_file_async();
-                        ui.close_menu();
-                    }
-                    if ui.button("Exit").clicked() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                });
+    /// Render the menu bar
+    pub(crate) fn render_menu_bar(&self) -> Element<'_, Message> {
+        let file_menu = button(text("File"))
+            .style(theme::button_secondary)
+            .on_press(Message::LoadFromFile);
 
-                ui.menu_button("Edit", |ui| {
-                    if ui.button("Paste from clipboard").clicked() {
-                        self.paste_from_clipboard();
-                        ui.close_menu();
-                    }
-                    if ui.button("Clear").clicked() {
-                        self.input_text.clear();
-                        self.parsed_auras.clear();
-                        ui.close_menu();
-                    }
-                });
+        let edit_menu = button(text("Paste"))
+            .style(theme::button_secondary)
+            .on_press(Message::PasteFromClipboard);
 
-                ui.menu_button("View", |ui| {
-                    ui.checkbox(&mut self.show_decoded_view, "Show decoded JSON");
-                });
-            });
-        });
+        let clear_btn = button(text("Clear"))
+            .style(theme::button_secondary)
+            .on_press(Message::ClearInput);
+
+        let view_label = if self.show_decoded_view {
+            "Hide JSON"
+        } else {
+            "Show JSON"
+        };
+        let view_menu = button(text(view_label))
+            .style(theme::button_secondary)
+            .on_press(Message::ToggleDecodedView);
+
+        let menu_row = row![
+            file_menu,
+            edit_menu,
+            clear_btn,
+            view_menu,
+            space::horizontal()
+        ]
+        .spacing(8)
+        .padding(8);
+
+        container(menu_row)
+            .width(Length::Fill)
+            .style(theme::container_panel)
+            .into()
     }
 
-    pub(crate) fn render_status_bar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                let color = if self.status_is_error {
-                    egui::Color32::RED
+    /// Render the status bar
+    pub(crate) fn render_status_bar(&self) -> Element<'_, Message> {
+        let status_color = if self.status_is_error {
+            colors::ERROR
+        } else {
+            colors::TEXT_SECONDARY
+        };
+
+        let status_text = text(&self.status_message).color(status_color);
+
+        container(status_text)
+            .width(Length::Fill)
+            .padding(8)
+            .style(theme::container_panel)
+            .into()
+    }
+
+    /// Render the decoded JSON panel (right side)
+    pub(crate) fn render_decoded_panel(&self) -> Element<'_, Message> {
+        let content = if let Some(idx) = self.selected_aura_index {
+            if let Some(entry) = self.parsed_auras.get(idx) {
+                if let Some(aura) = &entry.aura {
+                    let json = serde_json::to_string_pretty(&aura.data)
+                        .unwrap_or_else(|_| "Failed to serialize".to_string());
+                    text(json).size(12)
                 } else {
-                    ui.visuals().text_color()
-                };
-                ui.colored_label(color, &self.status_message);
-            });
-        });
-    }
+                    text("No aura data").color(colors::TEXT_MUTED)
+                }
+            } else {
+                text("Invalid selection").color(colors::TEXT_MUTED)
+            }
+        } else {
+            text("Select an aura to view decoded data").color(colors::TEXT_MUTED)
+        };
 
-    pub(crate) fn render_decoded_panel(&mut self, ctx: &egui::Context) {
-        if self.show_decoded_view {
-            egui::SidePanel::right("decoded_panel")
-                .min_width(300.0)
-                .show(ctx, |ui| {
-                    ui.heading("Decoded Data");
-                    ui.separator();
+        let header = text("Decoded Data").size(16).color(colors::GOLD);
 
-                    if let Some(idx) = self.selected_aura_index {
-                        if let Some(entry) = self.parsed_auras.get(idx) {
-                            if let Some(aura) = &entry.aura {
-                                egui::ScrollArea::both().show(ui, |ui| {
-                                    let json = serde_json::to_string_pretty(&aura.data)
-                                        .unwrap_or_else(|_| "Failed to serialize".to_string());
-                                    ui.add(
-                                        egui::TextEdit::multiline(&mut json.as_str())
-                                            .font(egui::TextStyle::Monospace)
-                                            .desired_width(f32::INFINITY),
-                                    );
-                                });
-                            }
-                        }
-                    } else {
-                        ui.label("Select an aura to view decoded data");
-                    }
-                });
-        }
+        let panel_content = column![header, content]
+            .spacing(8)
+            .padding(12)
+            .width(Length::Fixed(300.0));
+
+        container(iced::widget::scrollable(panel_content))
+            .width(Length::Fixed(300.0))
+            .height(Length::Fill)
+            .style(theme::container_panel)
+            .into()
     }
 }

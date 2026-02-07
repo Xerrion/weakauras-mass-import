@@ -609,7 +609,7 @@ impl AuraTreeNode {
 }
 
 /// Result of importing auras
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ImportResult {
     pub added: Vec<String>,
     pub skipped: Vec<String>,
@@ -742,6 +742,16 @@ pub enum ConflictAction {
     UpdateSelected,
 }
 
+impl std::fmt::Display for ConflictAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConflictAction::Skip => write!(f, "Skip"),
+            ConflictAction::ReplaceAll => write!(f, "Replace"),
+            ConflictAction::UpdateSelected => write!(f, "Update"),
+        }
+    }
+}
+
 impl Default for ConflictResolution {
     fn default() -> Self {
         Self {
@@ -753,7 +763,7 @@ impl Default for ConflictResolution {
 }
 
 /// Result of conflict detection
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ConflictDetectionResult {
     /// Auras that don't exist (no conflict)
     pub new_auras: Vec<(String, LuaValue)>,

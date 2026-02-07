@@ -1,295 +1,292 @@
 //! Import confirmation and conflict resolution dialogs.
 
-use crate::categories::UpdateCategory;
-use crate::saved_variables::{ConflictAction, ImportConflict};
-use crate::theme;
-use eframe::egui;
+use iced::widget::{
+    button, checkbox, column, container, pick_list, row, scrollable, space, text, Column,
+};
+use iced::{Alignment, Element, Length, Padding};
 
-use super::super::WeakAuraImporter;
+use crate::saved_variables::{ConflictAction, ImportConflict};
+use crate::theme::{self, colors};
+
+use super::super::{Message, WeakAuraImporter};
 
 impl WeakAuraImporter {
-    pub(crate) fn render_import_confirmation(&mut self, ctx: &egui::Context) {
-        if self.show_import_confirm {
-            egui::Window::new("Confirm Import")
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .show(ctx, |ui| {
-                    let count = self
-                        .parsed_auras
-                        .iter()
-                        .filter(|e| e.selected && e.validation.is_valid)
-                        .count();
-                    ui.label(format!("Import {} aura(s) to SavedVariables?", count));
-                    ui.add_space(8.0);
+    /// Overlay the import confirmation dialog on top of the main view
+    pub(crate) fn overlay_import_confirmation<'a>(
+        &'a self,
+        underlay: Element<'a, Message>,
+    ) -> Element<'a, Message> {
+        let count = self
+            .parsed_auras
+            .iter()
+            .filter(|e| e.selected && e.validation.is_valid)
+            .count();
 
-                    if let Some(path) = &self.selected_sv_path {
-                        ui.label(theme::muted_text(&format!(
-                            "Target: {}",
-                            path.file_name().unwrap_or_default().to_string_lossy()
-                        )));
-                    }
-
-                    ui.add_space(16.0);
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            self.show_import_confirm = false;
-                        }
-                        let confirm_btn = egui::Button::new(
-                            egui::RichText::new("Confirm Import").color(theme::colors::BG_DARKEST),
-                        )
-                        .fill(theme::colors::GOLD);
-                        if ui.add(confirm_btn).clicked() {
-                            self.show_import_confirm = false;
-                            self.import_auras();
-                        }
-                    });
-                });
-        }
-    }
-
-    pub(crate) fn render_conflict_dialog(&mut self, ctx: &egui::Context) {
-        if !self.show_conflict_dialog {
-            return;
-        }
-
-        // Clone data we need to avoid borrow issues
-        let (new_count, conflict_count, conflicts) = match &self.conflict_result {
-            Some(cr) => (cr.new_auras.len(), cr.conflicts.len(), cr.conflicts.clone()),
-            None => return,
+        let target_text = if let Some(path) = &self.selected_sv_path {
+            format!(
+                "Target: {}",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            )
+        } else {
+            String::new()
         };
 
-        egui::Window::new("Import Conflicts Detected")
-            .collapsible(false)
-            .resizable(true)
-            .min_width(600.0)
-            .min_height(400.0)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ctx, |ui| {
-                // Header info
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(format!("{} new aura(s) will be added", new_count))
-                            .color(theme::colors::SUCCESS),
-                    );
-                    ui.separator();
-                    ui.label(
-                        egui::RichText::new(format!("{} aura(s) already exist", conflict_count))
-                            .color(theme::colors::GOLD),
-                    );
-                });
-                ui.add_space(8.0);
-                ui.separator();
+        let dialog_content = column![
+            text(format!("Import {} aura(s) to SavedVariables?", count)).size(16),
+            space::vertical().height(Length::Fixed(8.0)),
+            text(target_text).color(colors::TEXT_MUTED),
+            space::vertical().height(Length::Fixed(16.0)),
+            row![
+                button(text("Cancel"))
+                    .style(theme::button_secondary)
+                    .on_press(Message::HideImportConfirm),
+                space::horizontal(),
+                button(text("Confirm Import").color(colors::BG_DARKEST))
+                    .style(theme::button_primary)
+                    .on_press(Message::ConfirmImport),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        ]
+        .spacing(4)
+        .padding(20)
+        .max_width(400);
 
-                // Global category selection
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new("Default Categories to Update:").strong());
-                ui.add_space(4.0);
+        let dialog_box = container(dialog_content)
+            .style(theme::container_modal)
+            .padding(8);
 
-                // Category checkboxes in a grid
-                egui::Grid::new("global_categories")
-                    .num_columns(4)
-                    .spacing([20.0, 4.0])
-                    .show(ui, |ui| {
-                        for (i, category) in UpdateCategory::all().iter().enumerate() {
-                            let mut enabled = self.global_categories.contains(category);
-                            if ui.checkbox(&mut enabled, category.display_name()).changed() {
-                                if enabled {
-                                    self.global_categories.insert(*category);
-                                } else {
-                                    self.global_categories.remove(category);
-                                }
-                                // Update all resolutions that use UpdateSelected
-                                for res in &mut self.conflict_resolutions {
-                                    if res.action == ConflictAction::UpdateSelected {
-                                        res.categories = self.global_categories.clone();
-                                    }
-                                }
-                            }
-                            if (i + 1) % 4 == 0 {
-                                ui.end_row();
-                            }
-                        }
-                    });
+        let centered_dialog = container(dialog_box)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill);
 
-                ui.add_space(8.0);
-                ui.separator();
+        let backdrop = container(centered_dialog)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(theme::container_modal_backdrop);
 
-                // Conflict list
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new("Conflicting Auras:").strong());
-
-                // Bulk actions
-                ui.horizontal(|ui| {
-                    if ui.button("Import All").clicked() {
-                        for res in &mut self.conflict_resolutions {
-                            res.action = ConflictAction::UpdateSelected;
-                            res.categories = self.global_categories.clone();
-                        }
-                    }
-                    if ui.button("Skip All").clicked() {
-                        for res in &mut self.conflict_resolutions {
-                            res.action = ConflictAction::Skip;
-                        }
-                    }
-                    if ui.button("Replace All").clicked() {
-                        for res in &mut self.conflict_resolutions {
-                            res.action = ConflictAction::ReplaceAll;
-                        }
-                    }
-                });
-
-                ui.add_space(4.0);
-
-                // Scrollable conflict list
-                let available_height = ui.available_height() - 50.0; // Leave room for buttons
-                egui::Frame::group(ui.style())
-                    .fill(theme::colors::BG_ELEVATED)
-                    .stroke(egui::Stroke::new(1.0, theme::colors::BORDER))
-                    .inner_margin(4.0)
-                    .show(ui, |ui| {
-                        egui::ScrollArea::vertical()
-                            .max_height(available_height.max(150.0))
-                            .show(ui, |ui| {
-                                for (idx, conflict) in conflicts.iter().enumerate() {
-                                    self.render_conflict_item(ui, idx, conflict);
-                                }
-                            });
-                    });
-
-                ui.add_space(8.0);
-
-                // Action buttons
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.show_conflict_dialog = false;
-                        self.conflict_result = None;
-                        self.conflict_resolutions.clear();
-                    }
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let import_btn = egui::Button::new(
-                            egui::RichText::new("Import")
-                                .color(theme::colors::BG_DARKEST)
-                                .strong(),
-                        )
-                        .fill(theme::colors::GOLD)
-                        .min_size(egui::vec2(100.0, 0.0));
-
-                        if ui.add(import_btn).clicked() {
-                            self.complete_import_with_resolutions();
-                        }
-                    });
-                });
-            });
+        // Stack the backdrop on top of the underlay
+        iced::widget::stack![underlay, backdrop].into()
     }
 
-    pub(crate) fn render_remove_confirmation(&mut self, ctx: &egui::Context) {
-        if !self.show_remove_confirm {
-            return;
-        }
+    /// Overlay the conflict resolution dialog on top of the main view
+    pub(crate) fn overlay_conflict_dialog<'a>(
+        &'a self,
+        underlay: Element<'a, Message>,
+    ) -> Element<'a, Message> {
+        let (new_count, conflict_count, conflicts) = match &self.conflict_result {
+            Some(cr) => (cr.new_auras.len(), cr.conflicts.len(), cr.conflicts.clone()),
+            None => {
+                return underlay;
+            }
+        };
 
-        egui::Window::new("Confirm Removal")
-            .collapsible(false)
-            .resizable(true)
-            .min_width(400.0)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ctx, |ui| {
-                let count = self.pending_removal_ids.len();
-                ui.label(
-                    egui::RichText::new(format!("Remove {} aura(s) from SavedVariables?", count))
-                        .strong(),
-                );
-                ui.add_space(4.0);
-                ui.label(theme::muted_text(
-                    "Groups will have all their children removed recursively.",
-                ));
-                ui.add_space(8.0);
+        // Header info
+        let header = row![
+            text(format!("{} new aura(s) will be added", new_count)).color(colors::SUCCESS),
+            text(" | ").color(colors::TEXT_MUTED),
+            text(format!("{} aura(s) already exist", conflict_count)).color(colors::GOLD),
+        ]
+        .spacing(8);
 
-                // Scrollable list of IDs to be removed
-                egui::Frame::group(ui.style())
-                    .fill(theme::colors::BG_ELEVATED)
-                    .stroke(egui::Stroke::new(1.0, theme::colors::BORDER))
-                    .inner_margin(4.0)
-                    .show(ui, |ui| {
-                        egui::ScrollArea::vertical()
-                            .max_height(200.0)
-                            .show(ui, |ui| {
-                                for id in &self.pending_removal_ids.clone() {
-                                    ui.label(
-                                        egui::RichText::new(id)
-                                            .color(theme::colors::TEXT_SECONDARY),
-                                    );
-                                }
-                            });
-                    });
+        // Global category selection header
+        let global_cat_header = text("Default Categories to Update:").size(14);
 
-                ui.add_space(12.0);
+        // Category checkboxes (simplified grid - row of 4)
+        // Build rows without borrowing a local Vec
+        let categories_grid = self.build_category_grid();
 
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.show_remove_confirm = false;
-                        self.pending_removal_ids.clear();
-                    }
+        // Bulk action buttons
+        let bulk_actions = row![
+            button(text("Import All").size(12))
+                .style(theme::button_secondary)
+                .on_press(Message::SetAllConflictsAction(
+                    ConflictAction::UpdateSelected
+                )),
+            button(text("Skip All").size(12))
+                .style(theme::button_secondary)
+                .on_press(Message::SetAllConflictsAction(ConflictAction::Skip)),
+            button(text("Replace All").size(12))
+                .style(theme::button_secondary)
+                .on_press(Message::SetAllConflictsAction(ConflictAction::ReplaceAll)),
+        ]
+        .spacing(8);
 
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let remove_btn = egui::Button::new(
-                            egui::RichText::new("Remove")
-                                .color(theme::colors::BG_DARKEST)
-                                .strong(),
-                        )
-                        .fill(theme::colors::ERROR);
+        // Conflict list
+        let conflict_list = self.render_conflict_list(&conflicts);
 
-                        if ui.add(remove_btn).clicked() {
-                            self.show_remove_confirm = false;
-                            self.remove_confirmed_auras();
-                        }
-                    });
-                });
-            });
+        let conflict_list_container =
+            container(scrollable(conflict_list).height(Length::Fixed(250.0)))
+                .style(theme::container_elevated)
+                .padding(8);
+
+        // Action buttons
+        let action_buttons = row![
+            button(text("Cancel"))
+                .style(theme::button_secondary)
+                .on_press(Message::HideConflictDialog),
+            space::horizontal(),
+            button(text("Import").color(colors::BG_DARKEST))
+                .style(theme::button_primary)
+                .on_press(Message::ConfirmConflictResolutions),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+        let dialog_content = column![
+            text("Import Conflicts Detected")
+                .size(18)
+                .color(colors::GOLD),
+            space::vertical().height(Length::Fixed(8.0)),
+            header,
+            space::vertical().height(Length::Fixed(12.0)),
+            global_cat_header,
+            categories_grid,
+            space::vertical().height(Length::Fixed(12.0)),
+            text("Conflicting Auras:").size(14),
+            bulk_actions,
+            space::vertical().height(Length::Fixed(8.0)),
+            conflict_list_container,
+            space::vertical().height(Length::Fixed(12.0)),
+            action_buttons,
+        ]
+        .spacing(4)
+        .padding(20)
+        .max_width(700);
+
+        let dialog_box = container(dialog_content)
+            .style(theme::container_modal)
+            .padding(8);
+
+        let centered_dialog = container(dialog_box)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill);
+
+        let backdrop = container(centered_dialog)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(theme::container_modal_backdrop);
+
+        iced::widget::stack![underlay, backdrop].into()
     }
 
-    fn render_conflict_item(&mut self, ui: &mut egui::Ui, idx: usize, conflict: &ImportConflict) {
-        let resolution = &mut self.conflict_resolutions[idx];
+    /// Build the category checkbox grid without borrowing issues
+    fn build_category_grid(&self) -> Column<'_, Message> {
+        use crate::categories::UpdateCategory;
 
-        ui.horizontal(|ui| {
-            // Action selector
-            let action_text = match resolution.action {
-                ConflictAction::Skip => "Skip",
-                ConflictAction::ReplaceAll => "Replace",
-                ConflictAction::UpdateSelected => "Update",
-            };
+        // Row 1: Name, Display, Trigger, Load
+        let row1 = row![
+            checkbox(self.global_categories.contains(&UpdateCategory::Name))
+                .label("Name")
+                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Name))
+                .text_size(12),
+            checkbox(self.global_categories.contains(&UpdateCategory::Display))
+                .label("Display")
+                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Display))
+                .text_size(12),
+            checkbox(self.global_categories.contains(&UpdateCategory::Trigger))
+                .label("Trigger")
+                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Trigger))
+                .text_size(12),
+            checkbox(self.global_categories.contains(&UpdateCategory::Load))
+                .label("Load")
+                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Load))
+                .text_size(12),
+        ]
+        .spacing(12);
 
-            egui::ComboBox::from_id_salt(format!("action_{}", idx))
-                .selected_text(action_text)
-                .width(80.0)
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut resolution.action, ConflictAction::Skip, "Skip");
-                    ui.selectable_value(
-                        &mut resolution.action,
-                        ConflictAction::ReplaceAll,
-                        "Replace",
-                    );
-                    ui.selectable_value(
-                        &mut resolution.action,
-                        ConflictAction::UpdateSelected,
-                        "Update",
-                    );
-                });
+        // Row 2: Action, Animation, Conditions, Author Options
+        let row2 = row![
+            checkbox(self.global_categories.contains(&UpdateCategory::Action))
+                .label("Actions")
+                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Action))
+                .text_size(12),
+            checkbox(self.global_categories.contains(&UpdateCategory::Animation))
+                .label("Animations")
+                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Animation))
+                .text_size(12),
+            checkbox(self.global_categories.contains(&UpdateCategory::Conditions))
+                .label("Conditions")
+                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Conditions))
+                .text_size(12),
+            checkbox(
+                self.global_categories
+                    .contains(&UpdateCategory::AuthorOptions)
+            )
+            .label("Author Options")
+            .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::AuthorOptions))
+            .text_size(12),
+        ]
+        .spacing(12);
 
-            // Aura name
+        // Row 3: Arrangement, Anchor, User Config, Metadata
+        let row3 = row![
+            checkbox(
+                self.global_categories
+                    .contains(&UpdateCategory::Arrangement)
+            )
+            .label("Arrangement")
+            .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Arrangement))
+            .text_size(12),
+            checkbox(self.global_categories.contains(&UpdateCategory::Anchor))
+                .label("Anchor")
+                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Anchor))
+                .text_size(12),
+            checkbox(self.global_categories.contains(&UpdateCategory::UserConfig))
+                .label("User Config")
+                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::UserConfig))
+                .text_size(12),
+            checkbox(self.global_categories.contains(&UpdateCategory::Metadata))
+                .label("Metadata")
+                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Metadata))
+                .text_size(12),
+        ]
+        .spacing(12);
+
+        Column::new().push(row1).push(row2).push(row3).spacing(4)
+    }
+
+    fn render_conflict_list(&self, conflicts: &[ImportConflict]) -> Column<'_, Message> {
+        let mut list_col = Column::new().spacing(8);
+
+        for (idx, conflict) in conflicts.iter().enumerate() {
+            let resolution = &self.conflict_resolutions[idx];
+
+            // Action dropdown using pick_list
+            let action_options = vec![
+                ConflictAction::Skip,
+                ConflictAction::ReplaceAll,
+                ConflictAction::UpdateSelected,
+            ];
+
+            let action_picker = pick_list(action_options, Some(resolution.action), move |action| {
+                Message::SetConflictAction(idx, action)
+            })
+            .text_size(12)
+            .width(Length::Fixed(90.0));
+
+            // Aura name with color based on action
             let name_color = match resolution.action {
-                ConflictAction::Skip => theme::colors::TEXT_MUTED,
-                _ => theme::colors::TEXT_PRIMARY,
+                ConflictAction::Skip => colors::TEXT_MUTED,
+                _ => colors::TEXT_PRIMARY,
             };
-            ui.label(egui::RichText::new(&conflict.aura_id).color(name_color));
+
+            let aura_id = conflict.aura_id.clone();
+            let mut item_row = row![action_picker, text(aura_id).color(name_color)]
+                .spacing(8)
+                .align_y(Alignment::Center);
 
             // Group indicator
             if conflict.is_group {
-                ui.label(theme::muted_text(&format!(
-                    "[Group: {} children]",
-                    conflict.child_count
-                )));
+                item_row = item_row.push(
+                    text(format!("[Group: {} children]", conflict.child_count))
+                        .color(colors::TEXT_MUTED)
+                        .size(12),
+                );
             }
 
             // Changed categories indicator
@@ -299,55 +296,202 @@ impl WeakAuraImporter {
                     .iter()
                     .map(|c| c.display_name())
                     .collect();
-                ui.label(theme::muted_text(&format!(
-                    "Changes: {}",
-                    changed_names.join(", ")
-                )));
+                item_row = item_row.push(
+                    text(format!("Changes: {}", changed_names.join(", ")))
+                        .color(colors::TEXT_MUTED)
+                        .size(12),
+                );
             }
 
             // Expand button for per-aura category selection
-            if resolution.action == ConflictAction::UpdateSelected
-                && ui
-                    .button(if resolution.expanded { "v" } else { ">" })
-                    .clicked()
-            {
-                resolution.expanded = !resolution.expanded;
+            if resolution.action == ConflictAction::UpdateSelected {
+                let expand_text = if resolution.expanded { "v" } else { ">" };
+                item_row = item_row.push(
+                    button(text(expand_text).size(12))
+                        .style(theme::button_frameless)
+                        .on_press(Message::ToggleConflictExpanded(idx)),
+                );
             }
-        });
 
-        // Expanded category selection for this specific aura
-        if resolution.expanded && resolution.action == ConflictAction::UpdateSelected {
-            ui.indent(format!("categories_{}", idx), |ui| {
-                egui::Grid::new(format!("aura_categories_{}", idx))
-                    .num_columns(4)
-                    .spacing([15.0, 2.0])
-                    .show(ui, |ui| {
-                        for (i, category) in UpdateCategory::all().iter().enumerate() {
-                            let mut enabled = resolution.categories.contains(category);
-                            let has_changes = conflict.changed_categories.contains(category);
+            list_col = list_col.push(item_row);
 
-                            let label = if has_changes {
-                                egui::RichText::new(category.display_name())
-                                    .color(theme::colors::GOLD)
-                            } else {
-                                egui::RichText::new(category.display_name())
-                            };
+            // Expanded category selection for this specific aura
+            if resolution.expanded && resolution.action == ConflictAction::UpdateSelected {
+                list_col =
+                    list_col.push(self.build_conflict_category_grid(idx, resolution, conflict));
+            }
 
-                            if ui.checkbox(&mut enabled, label).changed() {
-                                if enabled {
-                                    resolution.categories.insert(*category);
-                                } else {
-                                    resolution.categories.remove(category);
-                                }
-                            }
-                            if (i + 1) % 4 == 0 {
-                                ui.end_row();
-                            }
-                        }
-                    });
-            });
+            // Separator
+            list_col = list_col.push(
+                container(text(""))
+                    .height(Length::Fixed(1.0))
+                    .width(Length::Fill)
+                    .style(|_theme| container::Style {
+                        background: Some(colors::BORDER.into()),
+                        ..Default::default()
+                    }),
+            );
         }
 
-        ui.separator();
+        list_col
+    }
+
+    /// Build the category grid for a specific conflict's expanded view
+    fn build_conflict_category_grid<'a>(
+        &'a self,
+        idx: usize,
+        resolution: &'a crate::app::ConflictResolutionUI,
+        _conflict: &ImportConflict,
+    ) -> Column<'a, Message> {
+        use crate::categories::UpdateCategory;
+
+        let indent = space::horizontal().width(Length::Fixed(100.0));
+
+        // Row 1: Name, Display, Trigger, Load
+        let row1 = row![
+            indent,
+            checkbox(resolution.categories.contains(&UpdateCategory::Name))
+                .label("Name")
+                .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Name))
+                .text_size(11),
+            checkbox(resolution.categories.contains(&UpdateCategory::Display))
+                .label("Display")
+                .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Display))
+                .text_size(11),
+            checkbox(resolution.categories.contains(&UpdateCategory::Trigger))
+                .label("Trigger")
+                .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Trigger))
+                .text_size(11),
+            checkbox(resolution.categories.contains(&UpdateCategory::Load))
+                .label("Load")
+                .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Load))
+                .text_size(11),
+        ]
+        .spacing(8);
+
+        // Row 2: Action, Animation, Conditions, Author Options
+        let row2 = row![
+            space::horizontal().width(Length::Fixed(100.0)),
+            checkbox(resolution.categories.contains(&UpdateCategory::Action))
+                .label("Actions")
+                .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Action))
+                .text_size(11),
+            checkbox(resolution.categories.contains(&UpdateCategory::Animation))
+                .label("Animations")
+                .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Animation))
+                .text_size(11),
+            checkbox(resolution.categories.contains(&UpdateCategory::Conditions))
+                .label("Conditions")
+                .on_toggle(move |_| Message::ToggleConflictCategory(
+                    idx,
+                    UpdateCategory::Conditions
+                ))
+                .text_size(11),
+            checkbox(
+                resolution
+                    .categories
+                    .contains(&UpdateCategory::AuthorOptions)
+            )
+            .label("Author Options")
+            .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::AuthorOptions))
+            .text_size(11),
+        ]
+        .spacing(8);
+
+        // Row 3: Arrangement, Anchor, User Config, Metadata
+        let row3 = row![
+            space::horizontal().width(Length::Fixed(100.0)),
+            checkbox(resolution.categories.contains(&UpdateCategory::Arrangement))
+                .label("Arrangement")
+                .on_toggle(move |_| Message::ToggleConflictCategory(
+                    idx,
+                    UpdateCategory::Arrangement
+                ))
+                .text_size(11),
+            checkbox(resolution.categories.contains(&UpdateCategory::Anchor))
+                .label("Anchor")
+                .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Anchor))
+                .text_size(11),
+            checkbox(resolution.categories.contains(&UpdateCategory::UserConfig))
+                .label("User Config")
+                .on_toggle(move |_| Message::ToggleConflictCategory(
+                    idx,
+                    UpdateCategory::UserConfig
+                ))
+                .text_size(11),
+            checkbox(resolution.categories.contains(&UpdateCategory::Metadata))
+                .label("Metadata")
+                .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Metadata))
+                .text_size(11),
+        ]
+        .spacing(8);
+
+        Column::new()
+            .push(row1)
+            .push(row2)
+            .push(row3)
+            .spacing(2)
+            .padding(Padding::default().bottom(8.0))
+    }
+
+    /// Overlay the remove confirmation dialog on top of the main view
+    pub(crate) fn overlay_remove_confirmation<'a>(
+        &'a self,
+        underlay: Element<'a, Message>,
+    ) -> Element<'a, Message> {
+        let count = self.pending_removal_ids.len();
+
+        // List of IDs to be removed
+        let mut id_list = Column::new().spacing(4);
+        for id in &self.pending_removal_ids {
+            id_list = id_list.push(text(id).color(colors::TEXT_SECONDARY).size(13));
+        }
+
+        let id_list_container = container(scrollable(id_list).height(Length::Fixed(150.0)))
+            .style(theme::container_elevated)
+            .padding(8)
+            .width(Length::Fill);
+
+        let dialog_content = column![
+            text(format!("Remove {} aura(s) from SavedVariables?", count)).size(16),
+            space::vertical().height(Length::Fixed(4.0)),
+            text("Groups will have all their children removed recursively.")
+                .color(colors::TEXT_MUTED)
+                .size(12),
+            space::vertical().height(Length::Fixed(8.0)),
+            id_list_container,
+            space::vertical().height(Length::Fixed(12.0)),
+            row![
+                button(text("Cancel"))
+                    .style(theme::button_secondary)
+                    .on_press(Message::HideRemoveConfirm),
+                space::horizontal(),
+                button(text("Remove").color(colors::BG_DARKEST))
+                    .style(theme::button_danger)
+                    .on_press(Message::ConfirmRemoval),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        ]
+        .spacing(4)
+        .padding(20)
+        .max_width(450);
+
+        let dialog_box = container(dialog_content)
+            .style(theme::container_modal)
+            .padding(8);
+
+        let centered_dialog = container(dialog_box)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill);
+
+        let backdrop = container(centered_dialog)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(theme::container_modal_backdrop);
+
+        iced::widget::stack![underlay, backdrop].into()
     }
 }
