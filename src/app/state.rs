@@ -77,3 +77,17 @@ pub(crate) enum ScanUpdate {
     /// Scanning failed with an error
     Error(String),
 }
+
+/// Progress update from background aura removal task
+pub(crate) enum RemovalUpdate {
+    /// Progress message
+    Progress { message: String },
+    /// Removal completed successfully
+    Complete {
+        removed_count: usize,
+        tree: Vec<AuraTreeNode>,
+        tree_count: usize,
+    },
+    /// Removal failed with an error
+    Error(String),
+}

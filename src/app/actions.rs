@@ -793,6 +793,53 @@ impl WeakAuraImporter {
         }
     }
 
+    /// Poll for removal updates from background tasks.
+    /// Called each frame from `update()`.
+    pub(crate) fn poll_removing(&mut self) {
+        let Some(rx) = &mut self.removal_receiver else {
+            return;
+        };
+
+        loop {
+            match rx.try_recv() {
+                Ok(super::state::RemovalUpdate::Progress { message }) => {
+                    self.removal_message = message;
+                }
+                Ok(super::state::RemovalUpdate::Complete {
+                    removed_count,
+                    tree,
+                    tree_count,
+                }) => {
+                    self.existing_auras_tree = tree;
+                    self.existing_auras_count = tree_count;
+                    self.selected_for_removal.clear();
+                    self.is_removing = false;
+                    self.removal_message.clear();
+                    self.removal_receiver = None;
+                    if removed_count == 0 {
+                        self.set_status("No auras were removed (already absent)");
+                    } else {
+                        self.set_status(&format!("Removed {} aura(s)", removed_count));
+                    }
+                    return;
+                }
+                Ok(super::state::RemovalUpdate::Error(msg)) => {
+                    self.is_removing = false;
+                    self.removal_message.clear();
+                    self.removal_receiver = None;
+                    self.set_error(&msg);
+                    return;
+                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                    self.is_removing = false;
+                    self.removal_receiver = None;
+                    return;
+                }
+            }
+        }
+    }
+
     pub(crate) fn set_status(&mut self, msg: &str) {
         self.status_message = msg.to_string();
         self.status_is_error = false;
@@ -803,9 +850,9 @@ impl WeakAuraImporter {
         self.status_is_error = true;
     }
 
-    /// Remove selected auras from SavedVariables (called after confirmation).
+    /// Remove selected auras from SavedVariables (async, called after confirmation).
     pub(crate) fn remove_confirmed_auras(&mut self) {
-        let Some(sv_path) = &self.selected_sv_path else {
+        let Some(sv_path) = self.selected_sv_path.clone() else {
             self.set_error("No SavedVariables file selected");
             return;
         };
@@ -815,33 +862,80 @@ impl WeakAuraImporter {
             return;
         }
 
-        let mut manager = SavedVariablesManager::new(sv_path.clone());
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
 
-        if let Err(e) = manager.load() {
-            if !matches!(e, WeakAuraError::FileNotFound(_)) {
-                self.set_error(&format!("Failed to load SavedVariables: {}", e));
+        self.is_removing = true;
+        self.removal_message = "Removing auras...".to_string();
+        self.removal_receiver = Some(rx);
+
+        self.runtime.spawn(async move {
+            let _ = tx
+                .send(super::state::RemovalUpdate::Progress {
+                    message: "Loading SavedVariables...".to_string(),
+                })
+                .await;
+
+            let mut manager = SavedVariablesManager::new(sv_path);
+
+            if let Err(e) = manager.load() {
+                if !matches!(e, WeakAuraError::FileNotFound(_)) {
+                    let _ = tx
+                        .send(super::state::RemovalUpdate::Error(format!(
+                            "Failed to load SavedVariables: {}",
+                            e
+                        )))
+                        .await;
+                    return;
+                }
+            }
+
+            let _ = tx
+                .send(super::state::RemovalUpdate::Progress {
+                    message: "Removing auras...".to_string(),
+                })
+                .await;
+
+            let removed = manager.remove_auras(&ids);
+
+            if removed.is_empty() {
+                let tree = manager.get_aura_tree();
+                let tree_count = tree.iter().map(|n| n.total_count()).sum();
+                let _ = tx
+                    .send(super::state::RemovalUpdate::Complete {
+                        removed_count: 0,
+                        tree,
+                        tree_count,
+                    })
+                    .await;
                 return;
             }
-        }
 
-        let removed = manager.remove_auras(&ids);
+            let _ = tx
+                .send(super::state::RemovalUpdate::Progress {
+                    message: "Saving changes...".to_string(),
+                })
+                .await;
 
-        if removed.is_empty() {
-            self.set_status("No auras were removed (already absent)");
-            return;
-        }
+            if let Err(e) = manager.save() {
+                let _ = tx
+                    .send(super::state::RemovalUpdate::Error(format!(
+                        "Failed to save: {}",
+                        e
+                    )))
+                    .await;
+                return;
+            }
 
-        if let Err(e) = manager.save() {
-            self.set_error(&format!("Failed to save: {}", e));
-            return;
-        }
+            let tree = manager.get_aura_tree();
+            let tree_count = tree.iter().map(|n| n.total_count()).sum();
 
-        self.set_status(&format!("Removed {} aura(s)", removed.len()));
-
-        // Refresh existing auras tree
-        let tree = manager.get_aura_tree();
-        self.existing_auras_count = tree.iter().map(|n| n.total_count()).sum();
-        self.existing_auras_tree = tree;
-        self.selected_for_removal.clear();
+            let _ = tx
+                .send(super::state::RemovalUpdate::Complete {
+                    removed_count: removed.len(),
+                    tree,
+                    tree_count,
+                })
+                .await;
+        });
     }
 }

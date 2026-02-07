@@ -17,7 +17,7 @@ use crate::saved_variables::{
 };
 use crate::theme;
 
-use state::{ConflictResolutionUI, ImportUpdate, LoadingUpdate, ParsedAuraEntry};
+use state::{ConflictResolutionUI, ImportUpdate, LoadingUpdate, ParsedAuraEntry, RemovalUpdate};
 
 /// Main application state
 pub struct WeakAuraImporter {
@@ -93,6 +93,12 @@ pub struct WeakAuraImporter {
     pub(crate) scanning_message: String,
     /// Receiver for scan updates from background tasks
     pub(crate) scan_receiver: Option<mpsc::Receiver<state::ScanUpdate>>,
+    /// Whether a background removal task is in progress
+    pub(crate) is_removing: bool,
+    /// Removal progress message
+    pub(crate) removal_message: String,
+    /// Receiver for removal updates from background tasks
+    pub(crate) removal_receiver: Option<mpsc::Receiver<RemovalUpdate>>,
 }
 
 impl Default for WeakAuraImporter {
@@ -134,6 +140,9 @@ impl Default for WeakAuraImporter {
             is_scanning: false,
             scanning_message: String::new(),
             scan_receiver: None,
+            is_removing: false,
+            removal_message: String::new(),
+            removal_receiver: None,
         }
     }
 }
@@ -144,9 +153,10 @@ impl eframe::App for WeakAuraImporter {
         self.poll_loading();
         self.poll_importing();
         self.poll_scanning();
+        self.poll_removing();
 
         // Request repaint while any background task is in progress
-        if self.is_loading || self.is_importing || self.is_scanning {
+        if self.is_loading || self.is_importing || self.is_scanning || self.is_removing {
             ctx.request_repaint();
         }
 
