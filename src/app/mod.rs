@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use arboard::Clipboard;
 use eframe::egui;
+use tokio::sync::mpsc;
 
 use crate::categories::UpdateCategory;
 use crate::saved_variables::{
@@ -16,7 +17,7 @@ use crate::saved_variables::{
 };
 use crate::theme;
 
-use state::{ConflictResolutionUI, ParsedAuraEntry};
+use state::{ConflictResolutionUI, LoadingUpdate, ParsedAuraEntry};
 
 /// Main application state
 pub struct WeakAuraImporter {
@@ -74,6 +75,16 @@ pub struct WeakAuraImporter {
     pub(crate) show_remove_confirm: bool,
     /// IDs pending removal (populated when confirm dialog opens)
     pub(crate) pending_removal_ids: Vec<String>,
+    /// Tokio runtime for async operations
+    pub(crate) runtime: tokio::runtime::Runtime,
+    /// Whether a background loading task is in progress
+    pub(crate) is_loading: bool,
+    /// Loading progress (0.0 to 1.0)
+    pub(crate) loading_progress: f32,
+    /// Loading progress message
+    pub(crate) loading_message: String,
+    /// Receiver for loading updates from background tasks
+    pub(crate) loading_receiver: Option<mpsc::Receiver<LoadingUpdate>>,
 }
 
 impl Default for WeakAuraImporter {
@@ -106,6 +117,11 @@ impl Default for WeakAuraImporter {
             selected_for_removal: HashSet::new(),
             show_remove_confirm: false,
             pending_removal_ids: Vec::new(),
+            runtime: tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime"),
+            is_loading: false,
+            loading_progress: 0.0,
+            loading_message: String::new(),
+            loading_receiver: None,
         }
     }
 }
