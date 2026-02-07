@@ -448,79 +448,88 @@ impl WeakAuraImporter {
         });
     }
 
-    /// Load WeakAura strings from all files in a folder
-    pub(crate) fn load_from_folder(&mut self) {
-        if let Some(folder_path) = rfd::FileDialog::new().pick_folder() {
-            self.parsed_auras.clear();
-            self.selected_aura_index = None;
-            self.input_text.clear();
+    /// Load WeakAura strings from all files in a folder asynchronously,
+    /// appending to existing auras with duplicate detection.
+    pub(crate) fn load_from_folder_async(&mut self) {
+        let Some(folder_path) = rfd::FileDialog::new().pick_folder() else {
+            return;
+        };
 
-            let mut total_files = 0;
-            let mut total_auras = 0;
-            let mut valid_auras = 0;
+        // Scan folder synchronously (fast filesystem walk on main thread)
+        let file_paths = match Self::scan_folder_recursive(&folder_path) {
+            Ok(paths) => paths,
+            Err(e) => {
+                self.set_error(&format!("Failed to scan folder: {}", e));
+                return;
+            }
+        };
 
-            // Recursively scan folder for supported files
-            if let Ok(entries) = Self::scan_folder_recursive(&folder_path) {
-                for file_path in entries {
-                    if let Ok(content) = std::fs::read_to_string(&file_path) {
-                        let filename = file_path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| "unknown".to_string());
+        if file_paths.is_empty() {
+            self.set_status("No supported files found in folder");
+            return;
+        }
 
-                        let results = WeakAuraDecoder::decode_multiple(&content);
-                        if !results.is_empty() {
-                            total_files += 1;
-                        }
+        let existing_ids = collect_existing_ids(&self.parsed_auras);
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
 
-                        for result in results {
-                            total_auras += 1;
-                            let (validation, aura) = match result {
-                                Ok(aura) => {
-                                    valid_auras += 1;
-                                    let validation = ValidationResult {
-                                        is_valid: true,
-                                        format: Some(format!("v{}", aura.encoding_version)),
-                                        aura_id: Some(aura.id.clone()),
-                                        is_group: aura.is_group,
-                                        child_count: aura.children.len(),
-                                        error: None,
-                                    };
-                                    (validation, Some(aura))
-                                }
-                                Err(e) => {
-                                    let validation = ValidationResult {
-                                        is_valid: false,
-                                        format: None,
-                                        aura_id: None,
-                                        is_group: false,
-                                        child_count: 0,
-                                        error: Some(e.to_string()),
-                                    };
-                                    (validation, None)
-                                }
-                            };
+        self.is_loading = true;
+        self.loading_progress = 0.0;
+        self.loading_message = format!("Processing {} file(s)...", file_paths.len());
+        self.loading_receiver = Some(rx);
 
-                            self.parsed_auras.push(ParsedAuraEntry {
-                                validation,
-                                aura,
-                                selected: true,
-                                source_file: Some(filename.clone()),
-                            });
-                        }
+        self.runtime.spawn(async move {
+            let total_files = file_paths.len();
+            let mut all_entries = Vec::new();
+            let mut total_added = 0;
+            let mut total_duplicates = 0;
+            let mut total_invalid = 0;
+            // Track IDs across the batch so files within the same load don't duplicate each other
+            let mut batch_ids = existing_ids;
+
+            for (i, file_path) in file_paths.iter().enumerate() {
+                let filename = file_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                let _ = tx
+                    .send(super::state::LoadingUpdate::Progress {
+                        current: i,
+                        total: total_files,
+                        message: format!("Processing {} ({}/{})", filename, i + 1, total_files),
+                    })
+                    .await;
+
+                let content = match tokio::fs::read_to_string(&file_path).await {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+
+                let (entries, added, duplicates, invalid) =
+                    decode_auras_filtered(&content, Some(filename), &batch_ids);
+
+                // Add newly discovered IDs to batch set for cross-file dedup
+                for entry in &entries {
+                    if let Some(ref id) = entry.validation.aura_id {
+                        batch_ids.insert(id.clone());
                     }
                 }
+
+                all_entries.extend(entries);
+                total_added += added;
+                total_duplicates += duplicates;
+                total_invalid += invalid;
             }
 
-            if total_auras == 0 {
-                self.set_status("No WeakAura strings found in folder");
-            } else {
-                self.set_status(&format!(
-                    "Loaded {} aura(s) from {} file(s), {} valid",
-                    total_auras, total_files, valid_auras
-                ));
-            }
-        }
+            let _ = tx
+                .send(super::state::LoadingUpdate::Complete {
+                    entries: all_entries,
+                    added: total_added,
+                    duplicates: total_duplicates,
+                    invalid: total_invalid,
+                })
+                .await;
+        });
     }
 
     /// Recursively scan a folder for supported files (.txt, .md, .lua)

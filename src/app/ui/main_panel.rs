@@ -53,7 +53,7 @@ impl WeakAuraImporter {
                     .on_hover_text("Scan folder recursively for WeakAura strings (.txt, .md, .lua)")
                     .clicked()
                 {
-                    self.load_from_folder();
+                    self.load_from_folder_async();
                 }
                 if ui
                     .button("Clear")
