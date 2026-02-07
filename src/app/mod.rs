@@ -8,8 +8,9 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use arboard::Clipboard;
-use iced::widget::{column, container, row};
+use iced::widget::{column, container, row, text};
 use iced::{Element, Length, Task, Theme};
+use iced_toasts::{ToastContainer, ToastId, toast_container};
 
 use crate::categories::UpdateCategory;
 use crate::saved_variables::{
@@ -89,6 +90,16 @@ pub struct WeakAuraImporter {
     pub(crate) is_removing: bool,
     /// Removal progress message
     pub(crate) removal_message: String,
+    /// Show setup wizard for selecting SavedVariables
+    pub(crate) show_setup_wizard: bool,
+    /// Sidebar width in pixels
+    pub(crate) sidebar_width: f32,
+    /// Whether sidebar is being resized
+    pub(crate) is_resizing_sidebar: bool,
+    /// Whether mouse is hovering over resize edge
+    pub(crate) is_hovering_resize: bool,
+    /// Toast notification container
+    pub(crate) toasts: ToastContainer<'static, Message>,
 }
 
 /// Messages for the iced application
@@ -144,6 +155,10 @@ pub enum Message {
     HideRemoveConfirm,
     ConfirmRemoval,
 
+    // Setup wizard
+    ShowSetupWizard,
+    HideSetupWizard,
+
     // Tree navigation
     ToggleGroupExpanded(String),
     ExpandAllGroups,
@@ -160,6 +175,16 @@ pub enum Message {
     FolderSelected(Option<PathBuf>),
     WowPathSelected(Option<PathBuf>),
     ManualSvSelected(Option<PathBuf>),
+
+    // Sidebar resize
+    StartSidebarResize,
+    SidebarResize(f32),
+    EndSidebarResize,
+    HoverResizeEdge,
+    UnhoverResizeEdge,
+
+    // Toast notifications
+    DismissToast(ToastId),
 }
 
 impl Default for WeakAuraImporter {
@@ -199,6 +224,11 @@ impl Default for WeakAuraImporter {
             scanning_message: String::new(),
             is_removing: false,
             removal_message: String::new(),
+            show_setup_wizard: true,
+            sidebar_width: 350.0,
+            is_resizing_sidebar: false,
+            is_hovering_resize: false,
+            toasts: toast_container(Message::DismissToast),
         }
     }
 }
@@ -251,7 +281,10 @@ impl WeakAuraImporter {
             ),
             Message::SelectSavedVariablesFile(path) => {
                 self.selected_sv_path = Some(path);
-                self.load_existing_auras_async()
+                self.selected_for_removal.clear();
+                self.pending_removal_ids.clear();
+                // Don't load yet - wait for Continue button
+                Task::none()
             }
             Message::SelectSavedVariablesManually => Task::perform(
                 async {
@@ -289,6 +322,20 @@ impl WeakAuraImporter {
             Message::ManualSvSelected(path) => {
                 if let Some(p) = path {
                     self.selected_sv_path = Some(p);
+                    self.selected_for_removal.clear();
+                    self.pending_removal_ids.clear();
+                    return self.load_existing_auras_async();
+                }
+                Task::none()
+            }
+            Message::ShowSetupWizard => {
+                self.show_setup_wizard = true;
+                Task::none()
+            }
+            Message::HideSetupWizard => {
+                if self.selected_sv_path.is_some() {
+                    self.show_setup_wizard = false;
+                    // Load the SavedVariables when continuing
                     return self.load_existing_auras_async();
                 }
                 Task::none()
@@ -518,31 +565,125 @@ impl WeakAuraImporter {
                 self.handle_removal_update(update);
                 Task::none()
             }
+
+            // Sidebar resize
+            Message::StartSidebarResize => {
+                self.is_resizing_sidebar = true;
+                Task::none()
+            }
+            Message::SidebarResize(x) => {
+                if self.is_resizing_sidebar {
+                    // Clamp sidebar width between min and max
+                    const MIN_WIDTH: f32 = 200.0;
+                    const MAX_WIDTH: f32 = 600.0;
+                    self.sidebar_width = x.clamp(MIN_WIDTH, MAX_WIDTH);
+                }
+                Task::none()
+            }
+            Message::EndSidebarResize => {
+                self.is_resizing_sidebar = false;
+                Task::none()
+            }
+            Message::HoverResizeEdge => {
+                self.is_hovering_resize = true;
+                Task::none()
+            }
+            Message::UnhoverResizeEdge => {
+                self.is_hovering_resize = false;
+                Task::none()
+            }
+
+            // Toast notifications
+            Message::DismissToast(id) => {
+                self.toasts.dismiss(id);
+                Task::none()
+            }
         }
     }
 
     /// Render the application view
     pub fn view(&self) -> Element<'_, Message> {
-        // Main layout: menu bar at top, status bar at bottom, content in middle
-        let menu_bar = self.render_menu_bar();
-        let status_bar = self.render_status_bar();
+        use iced::widget::{mouse_area, space};
+        use iced::mouse::Interaction;
+        use crate::theme::{colors, spacing, typography};
 
-        // Content area with sidebar and main panel
+        // Header with app title and menu
+        let header = container(
+            row![
+                text("WeakAura Mass Import")
+                    .size(typography::TITLE)
+                    .color(colors::GOLD),
+                space::horizontal(),
+                self.render_menu_buttons()
+            ]
+            .spacing(spacing::MD)
+            .padding(spacing::MD)
+            .align_y(iced::Alignment::Center),
+        )
+        .width(Length::Fill)
+        .style(app_theme::container_toolbar);
+
         let sidebar = self.render_sidebar();
         let main_content = self.render_main_content();
 
-        // Optional decoded panel on right
+        // Resize edge - thin strip on the right of sidebar, visible on hover
+        let resize_color = if self.is_resizing_sidebar {
+            colors::GOLD
+        } else if self.is_hovering_resize {
+            colors::GOLD_MUTED
+        } else {
+            iced::Color::TRANSPARENT
+        };
+
+        let resize_edge = mouse_area(
+            container(space::horizontal())
+                .width(Length::Fixed(4.0))
+                .height(Length::Fill)
+                .style(move |_theme| container::Style {
+                    background: Some(resize_color.into()),
+                    ..Default::default()
+                }),
+        )
+        .interaction(Interaction::ResizingHorizontally)
+        .on_press(Message::StartSidebarResize)
+        .on_release(Message::EndSidebarResize)
+        .on_enter(Message::HoverResizeEdge)
+        .on_exit(Message::UnhoverResizeEdge);
+
+        // When resizing, we need to track mouse movement globally
         let content_row: Element<Message> = if self.show_decoded_view {
             let decoded_panel = self.render_decoded_panel();
-            row![sidebar, main_content, decoded_panel]
+            row![sidebar, resize_edge, main_content, decoded_panel]
+                .spacing(0)
                 .height(Length::Fill)
                 .into()
         } else {
-            row![sidebar, main_content].height(Length::Fill).into()
+            row![sidebar, resize_edge, main_content]
+                .spacing(0)
+                .height(Length::Fill)
+                .into()
         };
 
+        // Wrap content in mouse_area to track resize dragging
+        let content_with_resize: Element<Message> = if self.is_resizing_sidebar {
+            mouse_area(content_row)
+                .on_move(|point| Message::SidebarResize(point.x))
+                .on_release(Message::EndSidebarResize)
+                .into()
+        } else {
+            content_row
+        };
+
+        let content_container = container(content_with_resize)
+            .padding(spacing::MD)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        // Status bar with progress
+        let status_bar = self.render_status_bar();
+
         // Stack the dialogs on top using overlay pattern
-        let mut main_view: Element<Message> = column![menu_bar, content_row, status_bar].into();
+        let mut main_view: Element<Message> = column![header, content_container, status_bar].into();
 
         // Modal overlays
         if self.show_import_confirm {
@@ -554,10 +695,15 @@ impl WeakAuraImporter {
         if self.show_remove_confirm {
             main_view = self.overlay_remove_confirmation(main_view);
         }
+        if self.show_setup_wizard || self.selected_sv_path.is_none() {
+            main_view = self.overlay_setup_wizard(main_view);
+        }
 
-        container(main_view)
+        let final_view = container(main_view)
             .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+            .height(Length::Fill);
+
+        // Wrap with toast notifications overlay
+        self.toasts.view(final_view)
     }
 }

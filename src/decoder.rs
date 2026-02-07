@@ -395,7 +395,6 @@ impl WeakAuraDecoder {
 #[derive(Debug, Clone)]
 pub struct ValidationResult {
     pub is_valid: bool,
-    pub format: Option<String>,
     pub aura_id: Option<String>,
     pub is_group: bool,
     pub child_count: usize,
@@ -405,17 +404,9 @@ pub struct ValidationResult {
 impl ValidationResult {
     pub fn summary(&self) -> String {
         if self.is_valid {
-            let mut parts = vec![];
-            if let Some(id) = &self.aura_id {
-                parts.push(format!("ID: {}", id));
-            }
-            if let Some(fmt) = &self.format {
-                parts.push(fmt.clone());
-            }
-            if self.is_group {
-                parts.push(format!("Group with {} children", self.child_count));
-            }
-            parts.join(" | ")
+            self.aura_id
+                .clone()
+                .unwrap_or_else(|| "Unknown".to_string())
         } else {
             self.error.clone().unwrap_or_else(|| "Invalid".to_string())
         }

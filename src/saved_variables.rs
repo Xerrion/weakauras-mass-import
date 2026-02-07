@@ -578,16 +578,39 @@ pub struct SavedVariablesInfo {
     pub flavor: String,
 }
 
+impl SavedVariablesInfo {
+    /// Returns a pretty-formatted flavor name (e.g., "classic_era" → "Classic Era")
+    pub fn pretty_flavor(&self) -> String {
+        format_flavor_name(&self.flavor)
+    }
+}
+
 impl std::fmt::Display for SavedVariablesInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{} - {} ({})",
             self.account,
-            self.flavor,
+            self.pretty_flavor(),
             self.path.display()
         )
     }
+}
+
+/// Format a WoW flavor name to a pretty display name.
+/// E.g., "classic" → "Classic", "classic_era" → "Classic Era", "retail" → "Retail"
+pub fn format_flavor_name(flavor: &str) -> String {
+    flavor
+        .split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A node in the aura tree (for hierarchical display)

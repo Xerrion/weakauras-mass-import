@@ -3,7 +3,9 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use iced::Task;
+use iced::{stream, Task};
+use iced::futures::SinkExt;
+use iced_toasts::{toast, ToastLevel};
 
 use crate::decoder::{ValidationResult, WeakAura, WeakAuraDecoder};
 use crate::error::WeakAuraError;
@@ -22,17 +24,17 @@ fn collect_existing_ids(parsed_auras: &[ParsedAuraEntry]) -> HashSet<String> {
 }
 
 /// Decode auras from content, filtering out duplicates already in `existing_ids`.
-/// Returns `(entries, added, duplicates, invalid)`.
+/// Returns `(entries, added, duplicates, errors)` where errors is a list of error messages.
+/// Invalid entries are NOT added to the entries list.
 fn decode_auras_filtered(
     content: &str,
-    source_file: Option<String>,
     existing_ids: &HashSet<String>,
-) -> (Vec<ParsedAuraEntry>, usize, usize, usize) {
+) -> (Vec<ParsedAuraEntry>, usize, usize, Vec<String>) {
     let results = WeakAuraDecoder::decode_multiple(content);
     let mut entries = Vec::new();
     let mut added = 0;
     let mut duplicates = 0;
-    let mut invalid = 0;
+    let mut errors = Vec::new();
 
     for result in results {
         match result {
@@ -44,7 +46,6 @@ fn decode_auras_filtered(
                 added += 1;
                 let validation = ValidationResult {
                     is_valid: true,
-                    format: Some(format!("v{}", aura.encoding_version)),
                     aura_id: Some(aura.id.clone()),
                     is_group: aura.is_group,
                     child_count: aura.children.len(),
@@ -53,31 +54,16 @@ fn decode_auras_filtered(
                 entries.push(ParsedAuraEntry {
                     validation,
                     aura: Some(aura),
-                    selected: true,
-                    source_file: source_file.clone(),
+                    selected: false,
                 });
             }
             Err(e) => {
-                invalid += 1;
-                let validation = ValidationResult {
-                    is_valid: false,
-                    format: None,
-                    aura_id: None,
-                    is_group: false,
-                    child_count: 0,
-                    error: Some(e.to_string()),
-                };
-                entries.push(ParsedAuraEntry {
-                    validation,
-                    aura: None,
-                    selected: true,
-                    source_file: source_file.clone(),
-                });
+                errors.push(e.to_string());
             }
         }
     }
 
-    (entries, added, duplicates, invalid)
+    (entries, added, duplicates, errors)
 }
 
 impl WeakAuraImporter {
@@ -87,10 +73,13 @@ impl WeakAuraImporter {
         if path.exists() {
             self.discovered_sv_files = SavedVariablesManager::find_saved_variables(&path);
             if !self.discovered_sv_files.is_empty() {
-                self.set_status(&format!(
-                    "Found {} SavedVariables file(s)",
-                    self.discovered_sv_files.len()
-                ));
+                self.toasts.push(
+                    toast(&format!(
+                        "Found {} SavedVariables file(s)",
+                        self.discovered_sv_files.len()
+                    ))
+                    .level(ToastLevel::Info),
+                );
             }
         }
     }
@@ -128,68 +117,59 @@ impl WeakAuraImporter {
         )
     }
 
-    /// Parse the input text for WeakAura strings
+    /// Parse the input text for WeakAura strings (appends to existing list, skips duplicates)
     pub(crate) fn parse_input(&mut self) {
-        self.parsed_auras.clear();
+        let existing_ids = collect_existing_ids(&self.parsed_auras);
+        
+        let (new_entries, added, duplicates, errors) =
+            decode_auras_filtered(&self.input_text, &existing_ids);
+
+        self.parsed_auras.extend(new_entries);
         self.selected_aura_index = None;
 
-        let results = WeakAuraDecoder::decode_multiple(&self.input_text);
-
-        for result in results {
-            let (validation, aura) = match result {
-                Ok(aura) => {
-                    let validation = ValidationResult {
-                        is_valid: true,
-                        format: Some(format!("v{}", aura.encoding_version)),
-                        aura_id: Some(aura.id.clone()),
-                        is_group: aura.is_group,
-                        child_count: aura.children.len(),
-                        error: None,
-                    };
-                    (validation, Some(aura))
-                }
-                Err(e) => {
-                    let validation = ValidationResult {
-                        is_valid: false,
-                        format: None,
-                        aura_id: None,
-                        is_group: false,
-                        child_count: 0,
-                        error: Some(e.to_string()),
-                    };
-                    (validation, None)
-                }
-            };
-
-            self.parsed_auras.push(ParsedAuraEntry {
-                validation,
-                aura,
-                selected: true,
-                source_file: None,
-            });
+        // Show error toasts for invalid strings
+        for error in &errors {
+            self.toasts.push(
+                toast(error)
+                    .title("Invalid WeakAura")
+                    .level(ToastLevel::Error),
+            );
         }
 
-        let valid_count = self
-            .parsed_auras
-            .iter()
-            .filter(|e| e.validation.is_valid)
-            .count();
-        let total_count = self.parsed_auras.len();
-
-        if total_count == 0 {
-            self.set_status("No WeakAura strings detected in input");
-        } else {
-            self.set_status(&format!(
-                "Parsed {} aura(s), {} valid",
-                total_count, valid_count
-            ));
+        if added == 0 && duplicates == 0 && errors.is_empty() {
+            self.toasts.push(
+                toast("No WeakAura string detected in input")
+                    .level(ToastLevel::Warning),
+            );
+        } else if added > 0 {
+            // Show success toast for added auras
+            let mut msg = format!("{} aura(s) added", added);
+            if duplicates > 0 {
+                msg.push_str(&format!(", {} duplicate(s) skipped", duplicates));
+            }
+            self.toasts.push(
+                toast(&msg)
+                    .title("Success")
+                    .level(ToastLevel::Success),
+            );
+        } else if duplicates > 0 && errors.is_empty() {
+            // Only duplicates
+            self.toasts.push(
+                toast(&format!("{} duplicate(s) skipped", duplicates))
+                    .level(ToastLevel::Info),
+            );
         }
+        // Note: if only errors occurred, they're already shown above
     }
 
-    /// Import selected auras to SavedVariables (async)
+    /// Import selected auras to SavedVariables (async with streaming progress)
     pub(crate) fn import_auras_async(&mut self) -> Task<Message> {
         let Some(sv_path) = self.selected_sv_path.clone() else {
-            self.set_error("No SavedVariables file selected");
+            self.toasts.push(
+                toast("No SavedVariables file selected")
+                    .title("Import Error")
+                    .level(ToastLevel::Error),
+            );
             return Task::none();
         };
 
@@ -202,7 +182,11 @@ impl WeakAuraImporter {
             .collect();
 
         if auras.is_empty() {
-            self.set_error("No valid auras selected for import");
+            self.toasts.push(
+                toast("No valid auras selected for import")
+                    .title("Import Error")
+                    .level(ToastLevel::Error),
+            );
             return Task::none();
         }
 
@@ -210,52 +194,115 @@ impl WeakAuraImporter {
         self.import_progress = 0.0;
         self.import_progress_message = "Starting import...".to_string();
 
-        Task::perform(
-            async move {
-                let mut manager = SavedVariablesManager::new(sv_path);
+        Task::run(
+            stream::channel(100, move |mut sender: iced::futures::channel::mpsc::Sender<Message>| async move {
+                // Phase 1: Loading SavedVariables (0-25%)
+                let _ = sender
+                    .send(Message::ImportUpdate(ImportUpdate::Progress {
+                        current: 1,
+                        total: 4,
+                        message: "Loading SavedVariables...".to_string(),
+                    }))
+                    .await;
 
-                // Load existing SavedVariables
+                let mut manager = SavedVariablesManager::new(sv_path);
                 if let Err(e) = manager.load() {
                     if !matches!(e, WeakAuraError::FileNotFound(_)) {
-                        return ImportUpdate::Error(format!("Failed to load SavedVariables: {}", e));
+                        let _ = sender
+                            .send(Message::ImportUpdate(ImportUpdate::Error(format!(
+                                "Failed to load SavedVariables: {}",
+                                e
+                            ))))
+                            .await;
+                        return;
                     }
                 }
 
-                // Detect conflicts
+                // Phase 2: Detecting conflicts (25-50%)
+                let _ = sender
+                    .send(Message::ImportUpdate(ImportUpdate::Progress {
+                        current: 2,
+                        total: 4,
+                        message: "Detecting conflicts...".to_string(),
+                    }))
+                    .await;
+
                 let conflict_result = manager.detect_conflicts(&auras);
 
                 // If there are conflicts, send back to UI for resolution
                 if !conflict_result.conflicts.is_empty() {
-                    return ImportUpdate::ConflictsDetected(conflict_result);
+                    let _ = sender
+                        .send(Message::ImportUpdate(ImportUpdate::ConflictsDetected(
+                            conflict_result,
+                        )))
+                        .await;
+                    return;
                 }
 
-                // No conflicts - import directly
-                match manager.add_auras(&auras) {
-                    Ok(result) => {
-                        if let Err(e) = manager.save() {
-                            return ImportUpdate::Error(format!("Failed to save: {}", e));
-                        }
+                // Phase 3: Importing auras (50-75%)
+                let _ = sender
+                    .send(Message::ImportUpdate(ImportUpdate::Progress {
+                        current: 3,
+                        total: 4,
+                        message: format!("Importing {} aura(s)...", auras.len()),
+                    }))
+                    .await;
 
-                        let tree = manager.get_aura_tree();
-                        let tree_count = tree.iter().map(|n| n.total_count()).sum();
-
-                        ImportUpdate::Complete {
-                            result,
-                            tree,
-                            tree_count,
-                        }
+                let result = match manager.add_auras(&auras) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let _ = sender
+                            .send(Message::ImportUpdate(ImportUpdate::Error(format!(
+                                "Import failed: {}",
+                                e
+                            ))))
+                            .await;
+                        return;
                     }
-                    Err(e) => ImportUpdate::Error(format!("Import failed: {}", e)),
+                };
+
+                // Phase 4: Saving (75-100%)
+                let _ = sender
+                    .send(Message::ImportUpdate(ImportUpdate::Progress {
+                        current: 4,
+                        total: 4,
+                        message: "Saving changes...".to_string(),
+                    }))
+                    .await;
+
+                if let Err(e) = manager.save() {
+                    let _ = sender
+                        .send(Message::ImportUpdate(ImportUpdate::Error(format!(
+                            "Failed to save: {}",
+                            e
+                        ))))
+                        .await;
+                    return;
                 }
-            },
-            Message::ImportUpdate,
+
+                let tree = manager.get_aura_tree();
+                let tree_count = tree.iter().map(|n| n.total_count()).sum();
+
+                let _ = sender
+                    .send(Message::ImportUpdate(ImportUpdate::Complete {
+                        result,
+                        tree,
+                        tree_count,
+                    }))
+                    .await;
+            }),
+            |msg| msg,
         )
     }
 
-    /// Complete import with conflict resolutions (async)
+    /// Complete import with conflict resolutions (async with streaming progress)
     pub(crate) fn complete_import_with_resolutions_async(&mut self) -> Task<Message> {
         let Some(sv_path) = self.selected_sv_path.clone() else {
-            self.set_error("No SavedVariables file selected");
+            self.toasts.push(
+                toast("No SavedVariables file selected")
+                    .title("Import Error")
+                    .level(ToastLevel::Error),
+            );
             return Task::none();
         };
 
@@ -279,39 +326,76 @@ impl WeakAuraImporter {
         self.import_progress_message = "Starting import...".to_string();
         self.show_conflict_dialog = false;
 
-        Task::perform(
-            async move {
-                let mut manager = SavedVariablesManager::new(sv_path);
+        Task::run(
+            stream::channel(100, move |mut sender: iced::futures::channel::mpsc::Sender<Message>| async move {
+                // Phase 1: Loading SavedVariables (0-33%)
+                let _ = sender
+                    .send(Message::ImportUpdate(ImportUpdate::Progress {
+                        current: 1,
+                        total: 3,
+                        message: "Loading SavedVariables...".to_string(),
+                    }))
+                    .await;
 
-                // Load existing
+                let mut manager = SavedVariablesManager::new(sv_path);
                 if let Err(e) = manager.load() {
                     if !matches!(e, WeakAuraError::FileNotFound(_)) {
-                        return ImportUpdate::Error(format!("Failed to load SavedVariables: {}", e));
+                        let _ = sender
+                            .send(Message::ImportUpdate(ImportUpdate::Error(format!(
+                                "Failed to load SavedVariables: {}",
+                                e
+                            ))))
+                            .await;
+                        return;
                     }
                 }
 
-                // Apply resolutions
+                // Phase 2: Applying resolutions (33-66%)
+                let _ = sender
+                    .send(Message::ImportUpdate(ImportUpdate::Progress {
+                        current: 2,
+                        total: 3,
+                        message: "Applying conflict resolutions...".to_string(),
+                    }))
+                    .await;
+
                 let result = manager.apply_resolutions(
                     &conflict_result.new_auras,
                     &conflict_result.conflicts,
                     &resolutions,
                 );
 
-                // Save
+                // Phase 3: Saving (66-100%)
+                let _ = sender
+                    .send(Message::ImportUpdate(ImportUpdate::Progress {
+                        current: 3,
+                        total: 3,
+                        message: "Saving changes...".to_string(),
+                    }))
+                    .await;
+
                 if let Err(e) = manager.save() {
-                    return ImportUpdate::Error(format!("Failed to save: {}", e));
+                    let _ = sender
+                        .send(Message::ImportUpdate(ImportUpdate::Error(format!(
+                            "Failed to save: {}",
+                            e
+                        ))))
+                        .await;
+                    return;
                 }
 
                 let tree = manager.get_aura_tree();
                 let tree_count = tree.iter().map(|n| n.total_count()).sum();
 
-                ImportUpdate::Complete {
-                    result,
-                    tree,
-                    tree_count,
-                }
-            },
-            Message::ImportUpdate,
+                let _ = sender
+                    .send(Message::ImportUpdate(ImportUpdate::Complete {
+                        result,
+                        tree,
+                        tree_count,
+                    }))
+                    .await;
+            }),
+            |msg| msg,
         )
     }
 
@@ -324,7 +408,11 @@ impl WeakAuraImporter {
                     self.parse_input();
                 }
                 Err(e) => {
-                    self.set_error(&format!("Clipboard error: {}", e));
+                    self.toasts.push(
+                        toast(&format!("Clipboard error: {}", e))
+                            .title("Clipboard Error")
+                            .level(ToastLevel::Error),
+                    );
                 }
             }
         }
@@ -357,14 +445,14 @@ impl WeakAuraImporter {
             async move {
                 match tokio::fs::read_to_string(&path).await {
                     Ok(content) => {
-                        let (entries, added, duplicates, invalid) =
-                            decode_auras_filtered(&content, None, &existing_ids);
+                        let (entries, added, duplicates, errors) =
+                            decode_auras_filtered(&content, &existing_ids);
 
                         LoadingUpdate::Complete {
                             entries,
                             added,
                             duplicates,
-                            invalid,
+                            errors,
                         }
                     }
                     Err(e) => LoadingUpdate::Error(format!("Failed to read file: {}", e)),
@@ -393,13 +481,20 @@ impl WeakAuraImporter {
         let file_paths = match Self::scan_folder_recursive(&folder_path) {
             Ok(paths) => paths,
             Err(e) => {
-                self.set_error(&format!("Failed to scan folder: {}", e));
+                self.toasts.push(
+                    toast(&format!("Failed to scan folder: {}", e))
+                        .title("Folder Error")
+                        .level(ToastLevel::Error),
+                );
                 return Task::none();
             }
         };
 
         if file_paths.is_empty() {
-            self.set_status("No supported files found in folder");
+            self.toasts.push(
+                toast("No supported files found in folder")
+                    .level(ToastLevel::Warning),
+            );
             return Task::none();
         }
 
@@ -409,27 +504,36 @@ impl WeakAuraImporter {
         self.loading_progress = 0.0;
         self.loading_message = format!("Processing {} file(s)...", file_paths.len());
 
-        Task::perform(
-            async move {
+        let total_files = file_paths.len();
+
+        Task::run(
+            stream::channel(100, move |mut sender: iced::futures::channel::mpsc::Sender<Message>| async move {
                 let mut all_entries = Vec::new();
                 let mut total_added = 0;
                 let mut total_duplicates = 0;
-                let mut total_invalid = 0;
+                let mut all_errors = Vec::new();
                 let mut batch_ids = existing_ids;
 
-                for file_path in file_paths {
-                    let filename = file_path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "unknown".to_string());
+                for (idx, file_path) in file_paths.iter().enumerate() {
+                    let current = idx + 1;
+                    let _ = sender
+                        .send(Message::LoadingUpdate(LoadingUpdate::Progress {
+                            current,
+                            total: total_files,
+                            message: format!(
+                                "Processing file {} of {}...",
+                                current, total_files
+                            ),
+                        }))
+                        .await;
 
                     let content = match tokio::fs::read_to_string(&file_path).await {
                         Ok(c) => c,
                         Err(_) => continue,
                     };
 
-                    let (entries, added, duplicates, invalid) =
-                        decode_auras_filtered(&content, Some(filename), &batch_ids);
+                    let (entries, added, duplicates, errors) =
+                        decode_auras_filtered(&content, &batch_ids);
 
                     // Add newly discovered IDs to batch set for cross-file dedup
                     for entry in &entries {
@@ -441,17 +545,19 @@ impl WeakAuraImporter {
                     all_entries.extend(entries);
                     total_added += added;
                     total_duplicates += duplicates;
-                    total_invalid += invalid;
+                    all_errors.extend(errors);
                 }
 
-                LoadingUpdate::Complete {
-                    entries: all_entries,
-                    added: total_added,
-                    duplicates: total_duplicates,
-                    invalid: total_invalid,
-                }
-            },
-            Message::LoadingUpdate,
+                let _ = sender
+                    .send(Message::LoadingUpdate(LoadingUpdate::Complete {
+                        entries: all_entries,
+                        added: total_added,
+                        duplicates: total_duplicates,
+                        errors: all_errors,
+                    }))
+                    .await;
+            }),
+            |msg| msg,
         )
     }
 
@@ -488,32 +594,69 @@ impl WeakAuraImporter {
     /// Handle loading update from async task
     pub(crate) fn handle_loading_update(&mut self, update: LoadingUpdate) {
         match update {
+            LoadingUpdate::Progress {
+                current,
+                total,
+                message,
+            } => {
+                self.loading_progress = if total > 0 {
+                    current as f32 / total as f32
+                } else {
+                    0.0
+                };
+                self.loading_message = message;
+            }
             LoadingUpdate::Complete {
                 entries,
                 added,
                 duplicates,
-                invalid,
+                errors,
             } => {
                 self.parsed_auras.extend(entries);
                 self.is_loading = false;
                 self.loading_progress = 1.0;
                 self.loading_message.clear();
 
-                let mut parts = Vec::new();
-                parts.push(format!("{} added", added));
-                if duplicates > 0 {
-                    parts.push(format!("{} duplicates skipped", duplicates));
+                // Show error toasts for invalid strings
+                for error in &errors {
+                    self.toasts.push(
+                        toast(error)
+                            .title("Invalid WeakAura")
+                            .level(ToastLevel::Error),
+                    );
                 }
-                if invalid > 0 {
-                    parts.push(format!("{} invalid", invalid));
+
+                if added > 0 {
+                    let mut msg = format!("{} aura(s) loaded", added);
+                    if duplicates > 0 {
+                        msg.push_str(&format!(", {} duplicate(s) skipped", duplicates));
+                    }
+                    self.toasts.push(
+                        toast(&msg)
+                            .title("Success")
+                            .level(ToastLevel::Success),
+                    );
+                } else if duplicates > 0 && errors.is_empty() {
+                    self.toasts.push(
+                        toast(&format!("{} duplicate(s) skipped", duplicates))
+                            .level(ToastLevel::Info),
+                    );
+                } else if errors.is_empty() {
+                    self.toasts.push(
+                        toast("No WeakAura strings found in file(s)")
+                            .level(ToastLevel::Warning),
+                    );
                 }
-                self.set_status(&format!("Loaded: {}", parts.join(", ")));
             }
             LoadingUpdate::Error(msg) => {
                 self.is_loading = false;
                 self.loading_progress = 0.0;
                 self.loading_message.clear();
-                self.set_error(&msg);
+                self.toasts.push(
+                    toast(&msg)
+                        .title("Load Error")
+                        .level(ToastLevel::Error),
+                );
             }
         }
     }
@@ -521,6 +664,18 @@ impl WeakAuraImporter {
     /// Handle import update from async task
     pub(crate) fn handle_import_update(&mut self, update: ImportUpdate) {
         match update {
+            ImportUpdate::Progress {
+                current,
+                total,
+                message,
+            } => {
+                self.import_progress = if total > 0 {
+                    current as f32 / total as f32
+                } else {
+                    0.0
+                };
+                self.import_progress_message = message;
+            }
             ImportUpdate::ConflictsDetected(conflict_result) => {
                 // Initialize resolutions with defaults
                 self.conflict_resolutions = conflict_result
@@ -545,7 +700,11 @@ impl WeakAuraImporter {
                 tree,
                 tree_count,
             } => {
-                self.set_status(&format!("Import complete: {}", result.summary()));
+                self.toasts.push(
+                    toast(&format!("Import complete: {}", result.summary()))
+                        .title("Success")
+                        .level(ToastLevel::Success),
+                );
                 self.last_import_result = Some(result);
                 self.existing_auras_tree = tree;
                 self.existing_auras_count = tree_count;
@@ -556,7 +715,11 @@ impl WeakAuraImporter {
                 self.conflict_resolutions.clear();
             }
             ImportUpdate::Error(msg) => {
-                self.set_error(&msg);
+                self.toasts.push(
+                    toast(&msg)
+                        .title("Import Error")
+                        .level(ToastLevel::Error),
+                );
                 self.is_importing = false;
                 self.import_progress = 0.0;
                 self.import_progress_message.clear();
@@ -573,14 +736,23 @@ impl WeakAuraImporter {
                 self.expanded_groups.clear();
                 self.is_scanning = false;
                 self.scanning_message.clear();
-                self.set_status(&format!("Loaded {} existing aura(s)", count));
+                if count > 0 {
+                    self.toasts.push(
+                        toast(&format!("Loaded {} existing aura(s)", count))
+                            .level(ToastLevel::Info),
+                    );
+                }
             }
             ScanUpdate::Error(msg) => {
                 self.existing_auras_tree = Vec::new();
                 self.existing_auras_count = 0;
                 self.is_scanning = false;
                 self.scanning_message.clear();
-                self.set_error(&msg);
+                self.toasts.push(
+                    toast(&msg)
+                        .title("Scan Error")
+                        .level(ToastLevel::Error),
+                );
             }
         }
     }
@@ -599,33 +771,38 @@ impl WeakAuraImporter {
                 self.is_removing = false;
                 self.removal_message.clear();
                 if removed_count == 0 {
-                    self.set_status("No auras were removed (already absent)");
+                    self.toasts.push(
+                        toast("No auras were removed (already absent)")
+                            .level(ToastLevel::Info),
+                    );
                 } else {
-                    self.set_status(&format!("Removed {} aura(s)", removed_count));
+                    self.toasts.push(
+                        toast(&format!("Removed {} aura(s)", removed_count))
+                            .title("Success")
+                            .level(ToastLevel::Success),
+                    );
                 }
             }
             RemovalUpdate::Error(msg) => {
                 self.is_removing = false;
                 self.removal_message.clear();
-                self.set_error(&msg);
+                self.toasts.push(
+                    toast(&msg)
+                        .title("Removal Error")
+                        .level(ToastLevel::Error),
+                );
             }
         }
-    }
-
-    pub(crate) fn set_status(&mut self, msg: &str) {
-        self.status_message = msg.to_string();
-        self.status_is_error = false;
-    }
-
-    pub(crate) fn set_error(&mut self, msg: &str) {
-        self.status_message = msg.to_string();
-        self.status_is_error = true;
     }
 
     /// Remove selected auras from SavedVariables (async)
     pub(crate) fn remove_auras_async(&mut self) -> Task<Message> {
         let Some(sv_path) = self.selected_sv_path.clone() else {
-            self.set_error("No SavedVariables file selected");
+            self.toasts.push(
+                toast("No SavedVariables file selected")
+                    .title("Removal Error")
+                    .level(ToastLevel::Error),
+            );
             return Task::none();
         };
 

@@ -1,7 +1,8 @@
 //! Import confirmation and conflict resolution dialogs.
 
 use iced::widget::{
-    button, checkbox, column, container, pick_list, row, scrollable, space, text, Column,
+    button, checkbox, column, container, pick_list, row, scrollable, space, text, text_input,
+    Column,
 };
 use iced::{Alignment, Element, Length, Padding};
 
@@ -11,6 +12,154 @@ use crate::theme::{self, colors, spacing, typography};
 use super::super::{Message, WeakAuraImporter};
 
 impl WeakAuraImporter {
+    /// Overlay the setup wizard for selecting SavedVariables
+    pub(crate) fn overlay_setup_wizard<'a>(
+        &'a self,
+        underlay: Element<'a, Message>,
+    ) -> Element<'a, Message> {
+        let mut content = Column::new().spacing(spacing::SM);
+
+        content = content.push(
+            text("Game Location")
+                .size(typography::HEADING)
+                .color(colors::GOLD),
+        );
+
+        let wow_path_input = text_input("WoW Path...", &self.wow_path)
+            .on_input(Message::WowPathChanged)
+            .style(theme::text_input_style);
+
+        let browse_btn = button(text("...").size(typography::BODY))
+            .style(theme::button_secondary)
+            .on_press(Message::BrowseWowPath);
+
+        content = content.push(
+            column![
+                text("WoW Path:")
+                    .size(typography::BODY)
+                    .color(colors::TEXT_SECONDARY),
+                row![wow_path_input.width(Length::Fill), browse_btn].spacing(spacing::SM),
+            ]
+            .spacing(spacing::XS),
+        );
+
+        content = content.push(
+            text("Discovered SavedVariables:")
+                .size(typography::BODY)
+                .color(colors::TEXT_PRIMARY),
+        );
+
+        let files_list = if self.discovered_sv_files.is_empty() {
+            column![text("No SavedVariables found")
+                .size(typography::BODY)
+                .color(colors::TEXT_MUTED)]
+        } else {
+            let mut files_col = Column::new().spacing(spacing::XS);
+            for sv_info in &self.discovered_sv_files {
+                let is_selected = self.selected_sv_path.as_ref() == Some(&sv_info.path);
+                let label_text = format!("{} ({})", sv_info.account, sv_info.pretty_flavor());
+                let path_clone = sv_info.path.clone();
+
+                let file_btn = button(row![text(label_text).size(typography::BODY).color(
+                    if is_selected {
+                        colors::BG_VOID
+                    } else {
+                        colors::TEXT_SECONDARY
+                    }
+                )])
+                .width(Length::Fill)
+                .style(if is_selected {
+                    theme::button_primary
+                } else {
+                    theme::button_frameless
+                })
+                .on_press(Message::SelectSavedVariablesFile(path_clone));
+
+                files_col = files_col.push(file_btn);
+            }
+            files_col
+        };
+
+        let files_container = container(
+            scrollable(files_list)
+                .height(Length::Fixed(180.0))
+                .style(theme::scrollable_style),
+        )
+        .style(theme::container_inset)
+        .padding(spacing::SM);
+
+        content = content.push(files_container);
+
+        content = content.push(
+            button(text("Select file manually...").size(typography::BODY))
+                .style(theme::button_secondary)
+                .width(Length::Fill)
+                .on_press(Message::SelectSavedVariablesManually),
+        );
+
+        if self.is_scanning {
+            content = content.push(
+                row![
+                    text("Loading...")
+                        .size(typography::BODY)
+                        .color(colors::TEXT_SECONDARY),
+                    text(&self.scanning_message)
+                        .size(typography::CAPTION)
+                        .color(colors::TEXT_MUTED),
+                ]
+                .spacing(spacing::SM),
+            );
+        }
+
+        let can_continue = self.selected_sv_path.is_some();
+
+        let cancel_btn = if can_continue {
+            button(text("Cancel").size(typography::BODY))
+                .style(theme::button_secondary)
+                .on_press(Message::HideSetupWizard)
+        } else {
+            button(text("Cancel").size(typography::BODY)).style(theme::button_secondary)
+        };
+
+        let continue_btn = if can_continue {
+            button(
+                text("Continue")
+                    .size(typography::BODY)
+                    .color(colors::BG_VOID),
+            )
+            .style(theme::button_primary)
+            .on_press(Message::HideSetupWizard)
+        } else {
+            button(text("Continue").size(typography::BODY)).style(theme::button_secondary)
+        };
+
+        let actions_row = row![cancel_btn, space::horizontal(), continue_btn]
+            .spacing(spacing::SM)
+            .align_y(Alignment::Center);
+
+        let dialog_content = column![content, space::vertical().height(spacing::MD), actions_row]
+            .spacing(spacing::SM)
+            .padding(spacing::XL)
+            .max_width(520);
+
+        let dialog_box = container(dialog_content)
+            .style(theme::container_modal)
+            .padding(spacing::SM)
+            .width(Length::Fixed(520.0));
+
+        let centered_dialog = container(dialog_box)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill);
+
+        let backdrop = container(centered_dialog)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(theme::container_modal_backdrop);
+
+        iced::widget::stack![underlay, backdrop].into()
+    }
     /// Overlay the import confirmation dialog on top of the main view
     pub(crate) fn overlay_import_confirmation<'a>(
         &'a self,
@@ -32,7 +181,7 @@ impl WeakAuraImporter {
         };
 
         let dialog_content = column![
-            text(format!("Import {} aura(s) to SavedVariables?", count)).size(typography::HEADING),
+            text(format!("Import {} aura(s)?", count)).size(typography::HEADING),
             space::vertical().height(Length::Fixed(spacing::SM)),
             text(target_text)
                 .size(typography::BODY)
@@ -46,7 +195,7 @@ impl WeakAuraImporter {
                 button(
                     text("Confirm Import")
                         .size(typography::BODY)
-                        .color(colors::BG_DARKEST)
+                        .color(colors::BG_VOID)
                 )
                 .style(theme::button_primary)
                 .on_press(Message::ConfirmImport),
@@ -60,7 +209,8 @@ impl WeakAuraImporter {
 
         let dialog_box = container(dialog_content)
             .style(theme::container_modal)
-            .padding(spacing::SM);
+            .padding(spacing::SM)
+            .width(Length::Fixed(400.0));
 
         let centered_dialog = container(dialog_box)
             .width(Length::Fill)
@@ -102,7 +252,7 @@ impl WeakAuraImporter {
         .spacing(spacing::SM);
 
         // Global category selection header
-        let global_cat_header = text("Default Categories to Update:").size(typography::BODY);
+        let global_cat_header = text("Default categories to update:").size(typography::BODY);
 
         // Category checkboxes (simplified grid - row of 4)
         // Build rows without borrowing a local Vec
@@ -141,19 +291,15 @@ impl WeakAuraImporter {
                 .style(theme::button_secondary)
                 .on_press(Message::HideConflictDialog),
             space::horizontal(),
-            button(
-                text("Import")
-                    .size(typography::BODY)
-                    .color(colors::BG_DARKEST)
-            )
-            .style(theme::button_primary)
-            .on_press(Message::ConfirmConflictResolutions),
+            button(text("Import").size(typography::BODY).color(colors::BG_VOID))
+                .style(theme::button_primary)
+                .on_press(Message::ConfirmConflictResolutions),
         ]
         .spacing(spacing::SM)
         .align_y(Alignment::Center);
 
         let dialog_content = column![
-            text("Import Conflicts Detected")
+            text("Conflicts detected")
                 .size(typography::TITLE)
                 .color(colors::GOLD),
             space::vertical().height(Length::Fixed(spacing::SM)),
@@ -162,7 +308,7 @@ impl WeakAuraImporter {
             global_cat_header,
             categories_grid,
             space::vertical().height(Length::Fixed(spacing::MD)),
-            text("Conflicting Auras:").size(typography::BODY),
+            text("Conflicts:").size(typography::BODY),
             bulk_actions,
             space::vertical().height(Length::Fixed(spacing::SM)),
             conflict_list_container,
@@ -175,7 +321,8 @@ impl WeakAuraImporter {
 
         let dialog_box = container(dialog_content)
             .style(theme::container_modal)
-            .padding(spacing::SM);
+            .padding(spacing::SM)
+            .width(Length::Fixed(700.0));
 
         let centered_dialog = container(dialog_box)
             .width(Length::Fill)
@@ -377,19 +524,19 @@ impl WeakAuraImporter {
             checkbox(resolution.categories.contains(&UpdateCategory::Name))
                 .label("Name")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Name))
-                .text_size(typography::SMALL),
+                .text_size(typography::MICRO),
             checkbox(resolution.categories.contains(&UpdateCategory::Display))
                 .label("Display")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Display))
-                .text_size(typography::SMALL),
+                .text_size(typography::MICRO),
             checkbox(resolution.categories.contains(&UpdateCategory::Trigger))
                 .label("Trigger")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Trigger))
-                .text_size(typography::SMALL),
+                .text_size(typography::MICRO),
             checkbox(resolution.categories.contains(&UpdateCategory::Load))
                 .label("Load")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Load))
-                .text_size(typography::SMALL),
+                .text_size(typography::MICRO),
         ]
         .spacing(spacing::SM);
 
@@ -399,18 +546,18 @@ impl WeakAuraImporter {
             checkbox(resolution.categories.contains(&UpdateCategory::Action))
                 .label("Actions")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Action))
-                .text_size(typography::SMALL),
+                .text_size(typography::MICRO),
             checkbox(resolution.categories.contains(&UpdateCategory::Animation))
                 .label("Animations")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Animation))
-                .text_size(typography::SMALL),
+                .text_size(typography::MICRO),
             checkbox(resolution.categories.contains(&UpdateCategory::Conditions))
                 .label("Conditions")
                 .on_toggle(move |_| Message::ToggleConflictCategory(
                     idx,
                     UpdateCategory::Conditions
                 ))
-                .text_size(typography::SMALL),
+                .text_size(typography::MICRO),
             checkbox(
                 resolution
                     .categories
@@ -418,7 +565,7 @@ impl WeakAuraImporter {
             )
             .label("Author Options")
             .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::AuthorOptions))
-            .text_size(typography::SMALL),
+            .text_size(typography::MICRO),
         ]
         .spacing(spacing::SM);
 
@@ -431,22 +578,22 @@ impl WeakAuraImporter {
                     idx,
                     UpdateCategory::Arrangement
                 ))
-                .text_size(typography::SMALL),
+                .text_size(typography::MICRO),
             checkbox(resolution.categories.contains(&UpdateCategory::Anchor))
                 .label("Anchor")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Anchor))
-                .text_size(typography::SMALL),
+                .text_size(typography::MICRO),
             checkbox(resolution.categories.contains(&UpdateCategory::UserConfig))
                 .label("User Config")
                 .on_toggle(move |_| Message::ToggleConflictCategory(
                     idx,
                     UpdateCategory::UserConfig
                 ))
-                .text_size(typography::SMALL),
+                .text_size(typography::MICRO),
             checkbox(resolution.categories.contains(&UpdateCategory::Metadata))
                 .label("Metadata")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Metadata))
-                .text_size(typography::SMALL),
+                .text_size(typography::MICRO),
         ]
         .spacing(spacing::SM);
 
@@ -485,8 +632,7 @@ impl WeakAuraImporter {
         .width(Length::Fill);
 
         let dialog_content = column![
-            text(format!("Remove {} aura(s) from SavedVariables?", count))
-                .size(typography::HEADING),
+            text(format!("Remove {} aura(s)?", count)).size(typography::HEADING),
             space::vertical().height(Length::Fixed(spacing::XS)),
             text("Groups will have all their children removed recursively.")
                 .color(colors::TEXT_MUTED)
@@ -499,13 +645,9 @@ impl WeakAuraImporter {
                     .style(theme::button_secondary)
                     .on_press(Message::HideRemoveConfirm),
                 space::horizontal(),
-                button(
-                    text("Remove")
-                        .size(typography::BODY)
-                        .color(colors::BG_DARKEST)
-                )
-                .style(theme::button_danger)
-                .on_press(Message::ConfirmRemoval),
+                button(text("Remove").size(typography::BODY).color(colors::BG_VOID))
+                    .style(theme::button_danger)
+                    .on_press(Message::ConfirmRemoval),
             ]
             .spacing(spacing::SM)
             .align_y(Alignment::Center),
@@ -516,7 +658,8 @@ impl WeakAuraImporter {
 
         let dialog_box = container(dialog_content)
             .style(theme::container_modal)
-            .padding(spacing::SM);
+            .padding(spacing::SM)
+            .width(Length::Fixed(450.0));
 
         let centered_dialog = container(dialog_box)
             .width(Length::Fill)

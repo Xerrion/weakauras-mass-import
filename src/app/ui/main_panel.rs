@@ -11,24 +11,20 @@ use super::super::{Message, WeakAuraImporter};
 
 impl WeakAuraImporter {
     pub(crate) fn render_main_content(&self) -> Element<'_, Message> {
-        let mut content = Column::new().spacing(spacing::SM).padding(spacing::MD);
+        let mut content = Column::new().spacing(spacing::SM).padding(spacing::SM);
 
-        // Step 2 Header
+        // Header
         content = content.push(
-            text("Step 2: Load WeakAuras")
+            text("Add WeakAuras")
                 .size(typography::HEADING)
                 .color(colors::GOLD),
         );
 
         // Action Buttons row
         let paste_btn = if self.show_paste_input {
-            button(
-                text("Paste")
-                    .size(typography::BODY)
-                    .color(colors::BG_DARKEST),
-            )
-            .style(theme::button_primary)
-            .on_press(Message::TogglePasteInput)
+            button(text("Paste").size(typography::BODY).color(colors::BG_VOID))
+                .style(theme::button_primary)
+                .on_press(Message::TogglePasteInput)
         } else {
             button(text("Paste").size(typography::BODY))
                 .style(theme::button_secondary)
@@ -63,14 +59,28 @@ impl WeakAuraImporter {
 
         // Loading progress bar (shown during async file/folder loading)
         if self.is_loading {
-            content = content.push(progress_bar(0.0..=1.0, self.loading_progress));
-            if !self.loading_message.is_empty() {
-                content = content.push(
-                    text(&self.loading_message)
-                        .size(typography::CAPTION)
-                        .color(colors::TEXT_SECONDARY),
-                );
-            }
+            use iced::Border;
+
+            let bar = container(
+                progress_bar(0.0..=1.0, self.loading_progress).style(|_theme| {
+                    progress_bar::Style {
+                        background: colors::BG_SURFACE.into(),
+                        bar: colors::GOLD.into(),
+                        border: Border::default().rounded(4.0),
+                    }
+                }),
+            )
+            .height(8.0);
+
+            let msg = if !self.loading_message.is_empty() {
+                text(&self.loading_message)
+                    .size(typography::CAPTION)
+                    .color(colors::TEXT_SECONDARY)
+            } else {
+                text("")
+            };
+
+            content = content.push(Column::new().push(bar).push(msg).spacing(spacing::XS));
         }
 
         // Paste input area (only shown when toggled)
@@ -78,9 +88,10 @@ impl WeakAuraImporter {
             content = content.push(self.render_paste_input_area());
         }
 
-        // Step 3: Review & Import (only if auras parsed)
+        // Review & Import section (only if auras parsed)
         if !self.parsed_auras.is_empty() {
-            content = content.push(space::vertical().height(Length::Fixed(spacing::LG)));
+            // Divider
+            content = content.push(space::vertical().height(Length::Fixed(spacing::SM)));
             content = content.push(
                 container(text(""))
                     .height(Length::Fixed(1.0))
@@ -90,28 +101,25 @@ impl WeakAuraImporter {
                         ..Default::default()
                     }),
             );
-            content = content.push(space::vertical().height(Length::Fixed(spacing::LG)));
+            content = content.push(space::vertical().height(Length::Fixed(spacing::XS)));
             content = content.push(self.render_review_import_section());
         }
 
         container(scrollable(content).style(theme::scrollable_style))
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(theme::container_panel)
+            .style(theme::container_elevated)
             .into()
     }
 
     fn render_paste_input_area(&self) -> Element<'_, Message> {
-        let mut paste_content = Column::new().spacing(spacing::SM);
+        let mut paste_content = Column::new().spacing(spacing::XS);
 
         // Text input area
-        let input_area = text_input(
-            "Paste WeakAura import strings here (one per line)",
-            &self.input_text,
-        )
-        .on_input(Message::InputTextChanged)
-        .style(theme::text_input_style)
-        .width(Length::Fill);
+        let input_area = text_input("Paste a WeakAura import string", &self.input_text)
+            .on_input(Message::InputTextChanged)
+            .style(theme::text_input_style)
+            .width(Length::Fill);
 
         let input_container = container(input_area)
             .style(theme::container_elevated)
@@ -124,13 +132,9 @@ impl WeakAuraImporter {
             .style(theme::button_secondary)
             .on_press(Message::PasteFromClipboard);
 
-        let parse_btn = button(
-            text("Parse")
-                .size(typography::BODY)
-                .color(colors::BG_DARKEST),
-        )
-        .style(theme::button_primary)
-        .on_press(Message::ParseInput);
+        let parse_btn = button(text("Parse").size(typography::BODY).color(colors::BG_VOID))
+            .style(theme::button_primary)
+            .on_press(Message::ParseInput);
 
         paste_content = paste_content.push(
             row![paste_clipboard_btn, space::horizontal(), parse_btn]
@@ -142,11 +146,11 @@ impl WeakAuraImporter {
     }
 
     fn render_review_import_section(&self) -> Element<'_, Message> {
-        let mut content = Column::new().spacing(spacing::SM);
+        let mut content = Column::new().spacing(spacing::XS);
 
         // Header
         content = content.push(
-            text("Step 3: Review & Import")
+            text("Review & Import")
                 .size(typography::HEADING)
                 .color(colors::GOLD),
         );
@@ -192,7 +196,7 @@ impl WeakAuraImporter {
             button(
                 text("Import Selected >>")
                     .size(typography::BODY)
-                    .color(colors::BG_DARKEST),
+                    .color(colors::BG_VOID),
             )
             .style(theme::button_primary)
             .on_press(Message::ShowImportConfirm)
@@ -265,8 +269,20 @@ impl WeakAuraImporter {
 
         // Progress bar (shown during import)
         if self.is_importing {
+            use iced::widget::progress_bar;
+            use iced::Border;
+
             content = content.push(
-                container(progress_bar(0.0..=1.0, self.import_progress)).height(Length::Fixed(8.0)),
+                container(
+                    progress_bar(0.0..=1.0, self.import_progress).style(|_theme| {
+                        progress_bar::Style {
+                            background: colors::BG_SURFACE.into(),
+                            bar: colors::GOLD.into(),
+                            border: Border::default().rounded(4.0),
+                        }
+                    }),
+                )
+                .height(Length::Fixed(8.0)),
             );
             if !self.import_progress_message.is_empty() {
                 content = content.push(
@@ -284,26 +300,30 @@ impl WeakAuraImporter {
     }
 
     fn render_aura_list(&self) -> Element<'_, Message> {
-        let mut list_col = Column::new().spacing(spacing::XS);
+        let mut list_col = Column::new().spacing(spacing::MICRO);
 
         for (idx, entry) in self.parsed_auras.iter().enumerate() {
             let is_selected_for_view = self.selected_aura_index == Some(idx);
             let is_valid = entry.validation.is_valid;
 
-            // Remove button
-            let remove_btn = button(text("X").color(colors::ERROR).size(typography::CAPTION))
-                .style(theme::button_frameless)
-                .on_press(Message::RemoveAuraFromList(idx));
+            let mut item_row = row![].spacing(spacing::XS).align_y(iced::Alignment::Center);
 
-            // Checkbox for selection
-            let checkbox_widget =
-                checkbox(entry.selected).on_toggle(move |_| Message::ToggleAuraSelection(idx));
+            // Checkbox for selection (valid auras only)
+            if is_valid {
+                let checkbox_widget =
+                    checkbox(entry.selected).on_toggle(move |_| Message::ToggleAuraSelection(idx));
+                item_row = item_row.push(checkbox_widget);
+            } else {
+                // Placeholder to maintain alignment
+                item_row = item_row.push(space::horizontal().width(Length::Fixed(24.0)));
+            }
 
-            // Aura Info Label
-            let summary = entry.validation.summary();
-            let label_color = if is_valid {
-                if is_selected_for_view {
-                    colors::GOLD_LIGHT
+            // Aura name - always use button for consistent spacing
+            let name = entry.validation.summary();
+            // Dark text only when selected AND JSON view is visible (button has primary bg)
+            let name_color = if is_valid {
+                if is_selected_for_view && self.show_decoded_view {
+                    colors::BG_VOID
                 } else {
                     colors::TEXT_PRIMARY
                 }
@@ -311,47 +331,44 @@ impl WeakAuraImporter {
                 colors::TEXT_MUTED
             };
 
-            let label_btn = button(text(summary).size(typography::BODY).color(label_color))
-                .style(if is_selected_for_view {
+            // Always use a button wrapper for consistent padding/spacing
+            // regardless of whether JSON view is active
+            let label_btn = button(text(name).size(typography::BODY).color(name_color)).style(
+                if is_selected_for_view && self.show_decoded_view {
                     theme::button_primary
                 } else {
                     theme::button_frameless
-                })
-                .on_press(Message::SelectAuraForPreview(idx));
+                },
+            );
 
-            let mut item_row = row![remove_btn]
-                .spacing(spacing::SM)
-                .align_y(iced::Alignment::Center);
-
-            if is_valid {
-                item_row = item_row.push(checkbox_widget);
+            // Only make clickable when JSON panel is visible and aura is valid
+            let label_btn = if self.show_decoded_view && is_valid {
+                label_btn.on_press(Message::SelectAuraForPreview(idx))
             } else {
-                // Placeholder to maintain alignment
-                item_row = item_row.push(space::horizontal().width(Length::Fixed(24.0)));
-            }
+                label_btn
+            };
 
             item_row = item_row.push(label_btn);
 
-            // Group Child Count
+            // Group badge
             if entry.validation.is_group {
                 item_row = item_row.push(
-                    text(format!(
-                        "[Group: {} children]",
-                        entry.validation.child_count
-                    ))
-                    .color(colors::TEXT_MUTED)
-                    .size(typography::CAPTION),
+                    container(
+                        text(format!("{}", entry.validation.child_count))
+                            .size(typography::CAPTION)
+                            .color(colors::TEXT_MUTED),
+                    )
+                    .padding(iced::Padding::from([2, 6]))
+                    .style(theme::container_inset),
                 );
             }
 
-            // Source file (if loaded from folder)
-            if let Some(ref source) = entry.source_file {
-                item_row = item_row.push(
-                    text(format!("< {}", source))
-                        .color(colors::TEXT_MUTED)
-                        .size(typography::CAPTION),
-                );
-            }
+            // Remove button (at the end)
+            let remove_btn = button(text("×").color(colors::ERROR).size(typography::BODY))
+                .style(theme::button_frameless)
+                .on_press(Message::RemoveAuraFromList(idx));
+            item_row = item_row.push(space::horizontal().width(Length::Fill));
+            item_row = item_row.push(remove_btn);
 
             list_col = list_col.push(item_row);
         }
@@ -361,7 +378,7 @@ impl WeakAuraImporter {
                 .height(Length::Fill)
                 .style(theme::scrollable_style),
         )
-        .style(theme::container_elevated)
+        .style(theme::container_inset)
         .padding(spacing::SM)
         .height(Length::Fill);
 

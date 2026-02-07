@@ -12,18 +12,18 @@ use crate::theme::{self, colors, spacing, typography};
 use super::{Message, WeakAuraImporter};
 
 impl WeakAuraImporter {
-    /// Render the menu bar
-    pub(crate) fn render_menu_bar(&self) -> Element<'_, Message> {
+    /// Render the menu buttons for the header
+    pub(crate) fn render_menu_buttons(&self) -> Element<'_, Message> {
         let file_menu = button(text("File").size(typography::BODY))
-            .style(theme::button_secondary)
+            .style(theme::button_frameless)
             .on_press(Message::LoadFromFile);
 
         let edit_menu = button(text("Paste").size(typography::BODY))
-            .style(theme::button_secondary)
+            .style(theme::button_frameless)
             .on_press(Message::PasteFromClipboard);
 
         let clear_btn = button(text("Clear").size(typography::BODY))
-            .style(theme::button_secondary)
+            .style(theme::button_frameless)
             .on_press(Message::ClearInput);
 
         let view_label = if self.show_decoded_view {
@@ -32,22 +32,21 @@ impl WeakAuraImporter {
             "Show JSON"
         };
         let view_menu = button(text(view_label).size(typography::BODY))
-            .style(theme::button_secondary)
+            .style(theme::button_frameless)
             .on_press(Message::ToggleDecodedView);
 
-        let menu_row = row![
-            file_menu,
-            edit_menu,
-            clear_btn,
-            view_menu,
-            space::horizontal()
-        ]
-        .spacing(spacing::SM)
-        .padding(spacing::SM);
+        let setup_label = if self.selected_sv_path.is_some() {
+            "Change Install"
+        } else {
+            "Select Install"
+        };
+        let setup_btn = button(text(setup_label).size(typography::BODY))
+            .style(theme::button_frameless)
+            .on_press(Message::ShowSetupWizard);
 
-        container(menu_row)
-            .width(Length::Fill)
-            .style(theme::container_toolbar)
+        row![file_menu, edit_menu, clear_btn, view_menu, setup_btn]
+            .spacing(spacing::SM)
+            .align_y(iced::Alignment::Center)
             .into()
     }
 
@@ -63,7 +62,39 @@ impl WeakAuraImporter {
             .size(typography::CAPTION)
             .color(status_color);
 
-        container(status_text)
+        let mut content = row![status_text]
+            .spacing(spacing::MD)
+            .align_y(iced::Alignment::Center);
+
+        // Add progress bar if loading or importing
+        if self.is_loading || self.is_importing {
+            let progress = if self.is_importing {
+                self.import_progress
+            } else {
+                self.loading_progress
+            };
+
+            use iced::widget::progress_bar;
+            use iced::Border;
+
+            content = content.push(space::horizontal().width(Length::Fill));
+            content = content.push(
+                container(
+                    progress_bar(0.0..=1.0, progress)
+                        .style(|_theme| progress_bar::Style {
+                            background: colors::BG_SURFACE.into(),
+                            bar: colors::GOLD.into(),
+                            border: Border::default().rounded(4.0),
+                        })
+                )
+                .height(8.0)
+                .width(Length::Fixed(200.0))
+            );
+        } else {
+            content = content.push(space::horizontal().width(Length::Fill));
+        }
+
+        container(content)
             .width(Length::Fill)
             .padding(spacing::SM)
             .style(theme::container_status_bar)
@@ -77,7 +108,7 @@ impl WeakAuraImporter {
                 if let Some(aura) = &entry.aura {
                     let json = serde_json::to_string_pretty(&aura.data)
                         .unwrap_or_else(|_| "Failed to serialize".to_string());
-                    text(json).size(typography::SMALL)
+                    text(json).size(typography::CAPTION)
                 } else {
                     text("No aura data")
                         .size(typography::BODY)
