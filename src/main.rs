@@ -12,23 +12,18 @@ mod theme;
 mod util;
 
 use app::WeakAuraImporter;
-use eframe::egui;
 
-fn main() -> eframe::Result<()> {
+fn main() -> iced::Result {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1000.0, 700.0])
-            .with_min_inner_size([800.0, 600.0])
-            .with_title("WeakAura Mass Import"),
-        ..Default::default()
-    };
-
-    eframe::run_native(
-        "WeakAura Mass Import",
-        options,
-        Box::new(|cc| Ok(Box::new(WeakAuraImporter::new(cc)))),
+    iced::application(
+        WeakAuraImporter::new,
+        WeakAuraImporter::update,
+        WeakAuraImporter::view,
     )
+    .title("WeakAuras Mass Importer")
+    .theme(WeakAuraImporter::theme)
+    .window_size((1000.0, 700.0))
+    .run()
 }

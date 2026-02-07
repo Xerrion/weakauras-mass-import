@@ -7,18 +7,16 @@ use crate::decoder::{ValidationResult, WeakAura};
 use crate::saved_variables::{AuraTreeNode, ConflictAction, ConflictDetectionResult, ImportResult};
 
 /// Entry for a parsed aura in the list
-#[derive(Clone)]
-pub(crate) struct ParsedAuraEntry {
+#[derive(Clone, Debug)]
+pub struct ParsedAuraEntry {
     pub validation: ValidationResult,
     pub aura: Option<WeakAura>,
     pub selected: bool,
-    /// Source file (if loaded from folder)
-    pub source_file: Option<String>,
 }
 
 /// UI state for a single conflict resolution
-#[derive(Clone)]
-pub(crate) struct ConflictResolutionUI {
+#[derive(Clone, Debug)]
+pub struct ConflictResolutionUI {
     /// The conflict this resolves
     pub aura_id: String,
     /// Current action
@@ -29,10 +27,10 @@ pub(crate) struct ConflictResolutionUI {
     pub expanded: bool,
 }
 
-/// Progress update from background loading task
-#[derive(Clone)]
-pub(crate) enum LoadingUpdate {
-    /// Incremental progress report
+/// Result from background loading task
+#[derive(Clone, Debug)]
+pub enum LoadingUpdate {
+    /// Progress update during loading (0.0 to 1.0)
     Progress {
         current: usize,
         total: usize,
@@ -43,16 +41,22 @@ pub(crate) enum LoadingUpdate {
         entries: Vec<ParsedAuraEntry>,
         added: usize,
         duplicates: usize,
-        invalid: usize,
+        errors: Vec<String>,
     },
     /// Loading failed with an error
     Error(String),
 }
 
-/// Progress update from background import task
-pub(crate) enum ImportUpdate {
-    /// Incremental progress report
-    Progress { progress: f32, message: String },
+/// Result from background import task
+#[derive(Clone, Debug)]
+pub enum ImportUpdate {
+    /// Progress update during import (0.0 to 1.0)
+    #[allow(dead_code)]
+    Progress {
+        current: usize,
+        total: usize,
+        message: String,
+    },
     /// Conflicts detected — hand data back to UI for resolution
     ConflictsDetected(ConflictDetectionResult),
     /// Import completed successfully
@@ -65,10 +69,9 @@ pub(crate) enum ImportUpdate {
     Error(String),
 }
 
-/// Progress update from background SavedVariables scanning task
-pub(crate) enum ScanUpdate {
-    /// Progress message
-    Progress { message: String },
+/// Result from background SavedVariables scanning task
+#[derive(Clone, Debug)]
+pub enum ScanUpdate {
     /// Scanning completed successfully
     Complete {
         tree: Vec<AuraTreeNode>,
@@ -78,10 +81,9 @@ pub(crate) enum ScanUpdate {
     Error(String),
 }
 
-/// Progress update from background aura removal task
-pub(crate) enum RemovalUpdate {
-    /// Progress message
-    Progress { message: String },
+/// Result from background aura removal task
+#[derive(Clone, Debug)]
+pub enum RemovalUpdate {
     /// Removal completed successfully
     Complete {
         removed_count: usize,

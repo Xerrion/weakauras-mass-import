@@ -1,298 +1,184 @@
-//! Sidebar rendering: SavedVariables selection and existing aura tree.
+//! Sidebar rendering: existing aura tree.
 
-use std::collections::HashSet;
+use iced::widget::{button, checkbox, column, container, row, scrollable, space, text, Column};
+use iced::{Element, Length};
 
 use crate::saved_variables::AuraTreeNode;
-use crate::theme;
-use eframe::egui;
+use crate::theme::{self, colors, spacing, typography};
 
-use super::super::WeakAuraImporter;
+use super::super::{Message, WeakAuraImporter};
 
 impl WeakAuraImporter {
-    pub(crate) fn render_sidebar(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("sv_panel")
-            .min_width(250.0)
-            .show(ctx, |ui| {
-                ui.add_space(4.0);
-                ui.label(theme::step_header(1, "Select SavedVariables"));
-                ui.add_space(4.0);
-                ui.separator();
-                ui.add_space(4.0);
+    pub(crate) fn render_sidebar(&self) -> Element<'_, Message> {
+        let mut content = Column::new()
+            .spacing(spacing::SM)
+            .padding(spacing::SM)
+            .width(Length::Fill);
 
-                // WoW path input
-                ui.horizontal(|ui| {
-                    ui.label("WoW Path:");
-                    if ui.text_edit_singleline(&mut self.wow_path).changed() {
-                        self.scan_saved_variables();
-                    }
-                    if ui.button("...").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                            self.wow_path = path.to_string_lossy().to_string();
-                            self.scan_saved_variables();
-                        }
-                    }
-                });
+        // Existing Auras header with all buttons in one row
+        let header_row = row![
+            text("Existing Auras")
+                .size(typography::HEADING)
+                .color(colors::GOLD),
+            text(format!("({})", self.existing_auras_count))
+                .size(typography::BODY)
+                .color(colors::TEXT_MUTED),
+        ]
+        .spacing(spacing::XS)
+        .align_y(iced::Alignment::Center);
 
-                ui.add_space(8.0);
+        content = content.push(header_row);
 
-                // Discovered files list
-                ui.label(egui::RichText::new("Discovered files:").strong());
+        // Existing auras tree
+        if !self.existing_auras_tree.is_empty() && !self.is_scanning {
+            // All controls in a single row
+            let mut controls_row = row![
+                button(text("Expand").size(typography::CAPTION))
+                    .style(theme::button_secondary)
+                    .on_press(Message::ExpandAllGroups),
+                button(text("Collapse").size(typography::CAPTION))
+                    .style(theme::button_secondary)
+                    .on_press(Message::CollapseAllGroups),
+                button(text("Select").size(typography::CAPTION))
+                    .style(theme::button_secondary)
+                    .on_press(Message::SelectAllForRemoval),
+                button(text("Deselect").size(typography::CAPTION))
+                    .style(theme::button_secondary)
+                    .on_press(Message::DeselectAllForRemoval),
+            ]
+            .spacing(spacing::XS);
 
-                egui::Frame::group(ui.style())
-                    .fill(theme::colors::BG_ELEVATED)
-                    .stroke(egui::Stroke::new(1.0, theme::colors::BORDER))
-                    .inner_margin(4.0)
-                    .show(ui, |ui| {
-                        egui::ScrollArea::vertical()
-                            .max_height(200.0)
-                            .show(ui, |ui| {
-                                if self.discovered_sv_files.is_empty() {
-                                    ui.label(theme::muted_text("No SavedVariables found"));
-                                } else {
-                                    for sv_info in &self.discovered_sv_files.clone() {
-                                        let is_selected =
-                                            self.selected_sv_path.as_ref() == Some(&sv_info.path);
-                                        let text_color = if is_selected {
-                                            theme::colors::GOLD
-                                        } else {
-                                            theme::colors::TEXT_SECONDARY
-                                        };
+            if !self.selected_for_removal.is_empty() {
+                let count = self.selected_for_removal.len();
+                controls_row = controls_row.push(
+                    button(text(format!("Remove ({})", count)).size(typography::CAPTION))
+                        .style(theme::button_danger)
+                        .on_press(Message::ShowRemoveConfirm),
+                );
+            }
 
-                                        let label_text =
-                                            format!("{} ({})", sv_info.account, sv_info.flavor);
-                                        let label =
-                                            egui::RichText::new(label_text).color(text_color);
+            content = content.push(controls_row);
 
-                                        ui.horizontal(|ui| {
-                                            if ui.selectable_label(is_selected, label).clicked() {
-                                                self.selected_sv_path = Some(sv_info.path.clone());
-                                                self.load_existing_auras();
-                                            }
+            // Scrollable aura tree
+            let tree_content = self.render_aura_tree();
+            let tree_container = container(
+                scrollable(tree_content)
+                    .height(Length::Fill)
+                    .width(Length::Fill)
+                    .style(theme::scrollable_style),
+            )
+            .style(theme::container_inset)
+            .padding(spacing::SM)
+            .width(Length::Fill)
+            .height(Length::Fill);
 
-                                            if is_selected {
-                                                ui.label(
-                                                    egui::RichText::new("*")
-                                                        .color(theme::colors::GOLD),
-                                                );
-                                            }
-                                        });
-                                    }
-                                }
-                            });
-                    });
+            content = content.push(tree_container);
+        } else if self.is_scanning {
+            content = content.push(
+                text("Loading...")
+                    .size(typography::BODY)
+                    .color(colors::TEXT_MUTED),
+            );
+        } else {
+            content = content.push(
+                text("No auras found")
+                    .size(typography::BODY)
+                    .color(colors::TEXT_MUTED),
+            );
+        }
 
-                ui.add_space(8.0);
+        // Import result
+        if let Some(result) = &self.last_import_result {
+            content = content.push(
+                container(
+                    column![
+                        text("Last import:")
+                            .size(typography::CAPTION)
+                            .color(colors::TEXT_PRIMARY),
+                        text(result.summary())
+                            .size(typography::CAPTION)
+                            .color(colors::TEXT_SECONDARY),
+                    ]
+                    .spacing(spacing::XS),
+                )
+                .padding(spacing::SM)
+                .style(theme::container_surface)
+                .width(Length::Fill),
+            );
+        }
 
-                // Manual path selection
-                if ui.button("Select file manually...").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("Lua files", &["lua"])
-                        .pick_file()
-                    {
-                        self.selected_sv_path = Some(path);
-                        self.load_existing_auras();
-                    }
-                }
-
-                if let Some(path) = &self.selected_sv_path {
-                    ui.add_space(8.0);
-                    ui.separator();
-                    ui.add_space(4.0);
-                    ui.label("Selected:");
-                    ui.label(
-                        egui::RichText::new(path.file_name().unwrap_or_default().to_string_lossy())
-                            .color(theme::colors::SUCCESS)
-                            .strong(),
-                    );
-                }
-
-                // Existing auras tree (or scanning indicator)
-                if self.is_scanning {
-                    ui.add_space(8.0);
-                    ui.separator();
-                    ui.add_space(4.0);
-
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label(
-                            egui::RichText::new(&self.scanning_message)
-                                .color(theme::colors::TEXT_SECONDARY),
-                        );
-                    });
-                } else if !self.existing_auras_tree.is_empty() {
-                    ui.add_space(8.0);
-                    ui.separator();
-                    ui.add_space(4.0);
-
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("Existing Auras:").strong());
-                        ui.label(theme::muted_text(&format!(
-                            "({})",
-                            self.existing_auras_count
-                        )));
-                    });
-
-                    ui.add_space(4.0);
-
-                    // Expand/Collapse all buttons
-                    ui.horizontal(|ui| {
-                        if ui.small_button("Expand all").clicked() {
-                            fn collect_groups(node: &AuraTreeNode, set: &mut HashSet<String>) {
-                                if node.is_group {
-                                    set.insert(node.id.clone());
-                                    for child in &node.children {
-                                        collect_groups(child, set);
-                                    }
-                                }
-                            }
-                            for node in &self.existing_auras_tree {
-                                collect_groups(node, &mut self.expanded_groups);
-                            }
-                        }
-                        if ui.small_button("Collapse all").clicked() {
-                            self.expanded_groups.clear();
-                        }
-                    });
-
-                    // Selection & removal controls
-                    ui.horizontal(|ui| {
-                        if ui.small_button("Select all").clicked() {
-                            fn collect_ids(node: &AuraTreeNode, set: &mut HashSet<String>) {
-                                set.insert(node.id.clone());
-                                for child in &node.children {
-                                    collect_ids(child, set);
-                                }
-                            }
-                            for node in &self.existing_auras_tree {
-                                collect_ids(node, &mut self.selected_for_removal);
-                            }
-                        }
-                        if ui.small_button("Deselect all").clicked() {
-                            self.selected_for_removal.clear();
-                        }
-
-                        if !self.selected_for_removal.is_empty() {
-                            let count = self.selected_for_removal.len();
-                            let remove_btn = egui::Button::new(
-                                egui::RichText::new(format!("Remove ({})", count))
-                                    .color(theme::colors::BG_DARKEST)
-                                    .small(),
-                            )
-                            .fill(theme::colors::ERROR);
-                            if ui.add(remove_btn).clicked() {
-                                // Only keep top-level selections (children of selected groups
-                                // will be removed recursively by the backend)
-                                self.pending_removal_ids =
-                                    self.selected_for_removal.iter().cloned().collect();
-                                self.show_remove_confirm = true;
-                            }
-                        }
-                    });
-
-                    ui.add_space(4.0);
-
-                    // Scrollable aura tree
-                    egui::Frame::group(ui.style())
-                        .fill(theme::colors::BG_ELEVATED)
-                        .stroke(egui::Stroke::new(1.0, theme::colors::BORDER))
-                        .inner_margin(4.0)
-                        .show(ui, |ui| {
-                            egui::ScrollArea::vertical()
-                                .max_height(200.0)
-                                .id_salt("existing_auras_scroll")
-                                .show(ui, |ui| {
-                                    let tree = self.existing_auras_tree.clone();
-                                    for node in &tree {
-                                        self.render_aura_tree_node(ui, node, 0);
-                                    }
-                                });
-                        });
-                }
-
-                // Import result
-                if let Some(result) = &self.last_import_result {
-                    ui.add_space(8.0);
-                    ui.separator();
-                    ui.label(egui::RichText::new("Last import:").strong());
-                    ui.label(result.summary());
-                }
-            });
+        container(content)
+            .width(Length::Fixed(self.sidebar_width))
+            .height(Length::Fill)
+            .style(theme::container_elevated)
+            .into()
     }
 
-    pub(crate) fn render_aura_tree_node(
-        &mut self,
-        ui: &mut egui::Ui,
-        node: &AuraTreeNode,
+    fn render_aura_tree(&self) -> Column<'_, Message> {
+        let mut tree_col = Column::new().spacing(2).width(Length::Fill);
+
+        for node in &self.existing_auras_tree {
+            tree_col = self.render_aura_tree_node(tree_col, node, 0);
+        }
+
+        tree_col
+    }
+
+    fn render_aura_tree_node<'a>(
+        &self,
+        mut col: Column<'a, Message>,
+        node: &'a AuraTreeNode,
         depth: usize,
-    ) {
-        let indent = depth as f32 * 12.0;
+    ) -> Column<'a, Message> {
+        let indent = depth as u16 * 12;
 
-        ui.horizontal(|ui| {
-            ui.add_space(indent);
+        let is_selected = self.selected_for_removal.contains(&node.id);
 
-            // Custom-painted checkbox for removal selection (always visible)
-            let is_selected = self.selected_for_removal.contains(&node.id);
-            let checkbox_size = egui::vec2(14.0, 14.0);
-            let (rect, response) = ui.allocate_exact_size(checkbox_size, egui::Sense::click());
+        // Checkbox for removal selection
+        let node_id = node.id.clone();
+        let checkbox_btn = checkbox(is_selected)
+            .on_toggle(move |_| Message::ToggleAuraForRemoval(node_id.clone()));
 
-            if ui.is_rect_visible(rect) {
-                let painter = ui.painter();
-                // Always-visible border
-                painter.rect_stroke(
-                    rect.shrink(1.0),
-                    egui::Rounding::same(2.0),
-                    egui::Stroke::new(1.5, theme::colors::TEXT_SECONDARY),
-                );
-                // Gold fill when checked
-                if is_selected {
-                    painter.rect_filled(
-                        rect.shrink(3.0),
-                        egui::Rounding::same(1.0),
-                        theme::colors::GOLD,
-                    );
-                }
-            }
+        let mut node_row = row![]
+            .spacing(spacing::XS)
+            .padding(iced::Padding::default().left(indent as f32))
+            .width(Length::Fill);
 
-            if response.clicked() {
-                if is_selected {
-                    self.selected_for_removal.remove(&node.id);
-                } else {
-                    self.selected_for_removal.insert(node.id.clone());
-                }
-            }
+        node_row = node_row.push(checkbox_btn);
 
-            if node.is_group {
-                let is_expanded = self.expanded_groups.contains(&node.id);
-                let icon = if is_expanded { "v" } else { ">" };
+        if node.is_group {
+            let is_expanded = self.expanded_groups.contains(&node.id);
+            let expand_icon = if is_expanded { "▼" } else { "▶" };
 
-                if ui
-                    .add(egui::Button::new(icon).small().frame(false))
-                    .clicked()
-                {
-                    if is_expanded {
-                        self.expanded_groups.remove(&node.id);
-                    } else {
-                        self.expanded_groups.insert(node.id.clone());
-                    }
-                }
+            let expand_btn = button(text(expand_icon).size(typography::CAPTION))
+                .style(theme::button_frameless)
+                .on_press(Message::ToggleGroupExpanded(node.id.clone()));
 
-                ui.label(
-                    egui::RichText::new(&node.id)
-                        .color(theme::colors::GOLD)
-                        .strong(),
-                );
-                ui.label(theme::muted_text(&format!("({})", node.total_count() - 1)));
-            } else {
-                ui.add_space(18.0); // Align with group items
-                ui.label(egui::RichText::new(&node.id).color(theme::colors::TEXT_SECONDARY));
-            }
-        });
+            node_row = node_row.push(expand_btn);
+            node_row = node_row.push(text(&node.id).size(typography::BODY).color(colors::GOLD));
+            node_row = node_row.push(
+                text(format!("({})", node.total_count() - 1))
+                    .color(colors::TEXT_MUTED)
+                    .size(typography::CAPTION),
+            );
+        } else {
+            node_row = node_row.push(space::horizontal().width(Length::Fixed(18.0)));
+            node_row = node_row.push(
+                text(&node.id)
+                    .size(typography::BODY)
+                    .color(colors::TEXT_SECONDARY),
+            );
+        }
+
+        col = col.push(node_row);
 
         // Render children if expanded
         if node.is_group && self.expanded_groups.contains(&node.id) {
             for child in &node.children {
-                self.render_aura_tree_node(ui, child, depth + 1);
+                col = self.render_aura_tree_node(col, child, depth + 1);
             }
         }
+
+        col
     }
 }

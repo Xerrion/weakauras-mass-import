@@ -578,16 +578,39 @@ pub struct SavedVariablesInfo {
     pub flavor: String,
 }
 
+impl SavedVariablesInfo {
+    /// Returns a pretty-formatted flavor name (e.g., "classic_era" → "Classic Era")
+    pub fn pretty_flavor(&self) -> String {
+        format_flavor_name(&self.flavor)
+    }
+}
+
 impl std::fmt::Display for SavedVariablesInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{} - {} ({})",
             self.account,
-            self.flavor,
+            self.pretty_flavor(),
             self.path.display()
         )
     }
+}
+
+/// Format a WoW flavor name to a pretty display name.
+/// E.g., "classic" → "Classic", "classic_era" → "Classic Era", "retail" → "Retail"
+pub fn format_flavor_name(flavor: &str) -> String {
+    flavor
+        .split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A node in the aura tree (for hierarchical display)
@@ -609,7 +632,7 @@ impl AuraTreeNode {
 }
 
 /// Result of importing auras
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ImportResult {
     pub added: Vec<String>,
     pub skipped: Vec<String>,
@@ -742,6 +765,16 @@ pub enum ConflictAction {
     UpdateSelected,
 }
 
+impl std::fmt::Display for ConflictAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConflictAction::Skip => write!(f, "Skip"),
+            ConflictAction::ReplaceAll => write!(f, "Replace"),
+            ConflictAction::UpdateSelected => write!(f, "Update"),
+        }
+    }
+}
+
 impl Default for ConflictResolution {
     fn default() -> Self {
         Self {
@@ -753,7 +786,7 @@ impl Default for ConflictResolution {
 }
 
 /// Result of conflict detection
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ConflictDetectionResult {
     /// Auras that don't exist (no conflict)
     pub new_auras: Vec<(String, LuaValue)>,

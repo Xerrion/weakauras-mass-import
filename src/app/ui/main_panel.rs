@@ -1,369 +1,387 @@
 //! Main content panel: input area, aura list, import controls.
 
-use std::cell::Cell;
+use iced::widget::{
+    button, checkbox, container, progress_bar, row, scrollable, space, text, text_input, Column,
+};
+use iced::{Element, Length};
 
-use crate::theme;
-use eframe::egui;
+use crate::theme::{self, colors, spacing, typography};
 
-use super::super::WeakAuraImporter;
+use super::super::{Message, WeakAuraImporter};
 
 impl WeakAuraImporter {
-    pub(crate) fn render_main_content(&mut self, ctx: &egui::Context) {
-        // Keyboard shortcuts
-        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::V)) {
-            self.show_paste_input = true;
-            self.paste_from_clipboard();
+    pub(crate) fn render_main_content(&self) -> Element<'_, Message> {
+        let mut content = Column::new().spacing(spacing::SM).padding(spacing::SM);
+
+        // Header
+        content = content.push(
+            text("Add WeakAuras")
+                .size(typography::HEADING)
+                .color(colors::GOLD),
+        );
+
+        // Action Buttons row
+        let paste_btn = if self.show_paste_input {
+            button(text("Paste").size(typography::BODY).color(colors::BG_VOID))
+                .style(theme::button_primary)
+                .on_press(Message::TogglePasteInput)
+        } else {
+            button(text("Paste").size(typography::BODY))
+                .style(theme::button_secondary)
+                .on_press(Message::TogglePasteInput)
+        };
+
+        let load_file_btn = if self.is_loading {
+            button(text("Load file").size(typography::BODY)).style(theme::button_secondary)
+        } else {
+            button(text("Load file").size(typography::BODY))
+                .style(theme::button_secondary)
+                .on_press(Message::LoadFromFile)
+        };
+
+        let load_folder_btn = if self.is_loading {
+            button(text("Load folder").size(typography::BODY)).style(theme::button_secondary)
+        } else {
+            button(text("Load folder").size(typography::BODY))
+                .style(theme::button_secondary)
+                .on_press(Message::LoadFromFolder)
+        };
+
+        let clear_btn = button(text("Clear").size(typography::BODY))
+            .style(theme::button_secondary)
+            .on_press(Message::ClearInput);
+
+        content = content.push(
+            row![paste_btn, load_file_btn, load_folder_btn, clear_btn]
+                .spacing(spacing::SM)
+                .align_y(iced::Alignment::Center),
+        );
+
+        // Loading progress bar (shown during async file/folder loading)
+        if self.is_loading {
+            use iced::Border;
+
+            let bar = container(
+                progress_bar(0.0..=1.0, self.loading_progress).style(|_theme| {
+                    progress_bar::Style {
+                        background: colors::BG_SURFACE.into(),
+                        bar: colors::GOLD.into(),
+                        border: Border::default().rounded(4.0),
+                    }
+                }),
+            )
+            .height(8.0);
+
+            let msg = if !self.loading_message.is_empty() {
+                text(&self.loading_message)
+                    .size(typography::CAPTION)
+                    .color(colors::TEXT_SECONDARY)
+            } else {
+                text("")
+            };
+
+            content = content.push(Column::new().push(bar).push(msg).spacing(spacing::XS));
         }
-        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Enter))
-            && self.show_paste_input
-        {
-            self.parse_input();
+
+        // Paste input area (only shown when toggled)
+        if self.show_paste_input {
+            content = content.push(self.render_paste_input_area());
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            // Step 2 Header
-            ui.add_space(4.0);
-            ui.label(theme::step_header(2, "Load WeakAuras"));
-            ui.add_space(8.0);
+        // Review & Import section (only if auras parsed)
+        if !self.parsed_auras.is_empty() {
+            // Divider
+            content = content.push(space::vertical().height(Length::Fixed(spacing::SM)));
+            content = content.push(
+                container(text(""))
+                    .height(Length::Fixed(1.0))
+                    .width(Length::Fill)
+                    .style(|_theme| container::Style {
+                        background: Some(colors::BORDER.into()),
+                        ..Default::default()
+                    }),
+            );
+            content = content.push(space::vertical().height(Length::Fixed(spacing::XS)));
+            content = content.push(self.render_review_import_section());
+        }
 
-            // Action Buttons
-            ui.horizontal(|ui| {
-                // Paste toggle button
-                let paste_btn = if self.show_paste_input {
-                    egui::Button::new(egui::RichText::new("Paste").color(theme::colors::BG_DARKEST))
-                        .fill(theme::colors::GOLD)
-                } else {
-                    egui::Button::new("Paste")
-                };
-                if ui
-                    .add(paste_btn)
-                    .on_hover_text("Toggle paste input area (Ctrl+V)")
-                    .clicked()
-                {
-                    self.show_paste_input = !self.show_paste_input;
-                }
+        container(scrollable(content).style(theme::scrollable_style))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(theme::container_elevated)
+            .into()
+    }
 
-                if ui
-                    .add_enabled(!self.is_loading, egui::Button::new("Load file"))
-                    .on_hover_text("Load WeakAura strings from a text file")
-                    .clicked()
-                {
-                    self.load_from_file_async();
-                }
-                if ui
-                    .add_enabled(!self.is_loading, egui::Button::new("Load folder"))
-                    .on_hover_text("Scan folder recursively for WeakAura strings (.txt, .md, .lua)")
-                    .clicked()
-                {
-                    self.load_from_folder_async();
-                }
-                if ui
-                    .button("Clear")
-                    .on_hover_text("Clear all input and parsed auras")
-                    .clicked()
-                {
-                    self.input_text.clear();
-                    self.parsed_auras.clear();
-                    self.show_paste_input = false;
-                }
-            });
+    fn render_paste_input_area(&self) -> Element<'_, Message> {
+        let mut paste_content = Column::new().spacing(spacing::XS);
 
-            // Loading progress bar (shown during async file/folder loading)
-            if self.is_loading {
-                ui.add_space(8.0);
-                ui.add(
-                    egui::ProgressBar::new(self.loading_progress)
-                        .show_percentage()
-                        .animate(true),
+        // Text input area
+        let input_area = text_input("Paste a WeakAura import string", &self.input_text)
+            .on_input(Message::InputTextChanged)
+            .style(theme::text_input_style)
+            .width(Length::Fill);
+
+        let input_container = container(input_area)
+            .style(theme::container_elevated)
+            .padding(spacing::SM);
+
+        paste_content = paste_content.push(input_container);
+
+        // Paste from clipboard and Parse buttons
+        let paste_clipboard_btn = button(text("Paste from clipboard").size(typography::BODY))
+            .style(theme::button_secondary)
+            .on_press(Message::PasteFromClipboard);
+
+        let parse_btn = button(text("Parse").size(typography::BODY).color(colors::BG_VOID))
+            .style(theme::button_primary)
+            .on_press(Message::ParseInput);
+
+        paste_content = paste_content.push(
+            row![paste_clipboard_btn, space::horizontal(), parse_btn]
+                .spacing(spacing::SM)
+                .align_y(iced::Alignment::Center),
+        );
+
+        paste_content.into()
+    }
+
+    fn render_review_import_section(&self) -> Element<'_, Message> {
+        let mut content = Column::new().spacing(spacing::XS);
+
+        // Header
+        content = content.push(
+            text("Review & Import")
+                .size(typography::HEADING)
+                .color(colors::GOLD),
+        );
+
+        // Check if we can import
+        let can_import = self.selected_sv_path.is_some()
+            && self
+                .parsed_auras
+                .iter()
+                .any(|e| e.selected && e.validation.is_valid)
+            && !self.is_importing
+            && !self.is_loading;
+
+        // Selection Controls, Import Button & Stats
+        let select_all_btn = if self.is_importing {
+            button(text("Select All").size(typography::BODY)).style(theme::button_secondary)
+        } else {
+            button(text("Select All").size(typography::BODY))
+                .style(theme::button_secondary)
+                .on_press(Message::SelectAllAuras)
+        };
+
+        let deselect_all_btn = if self.is_importing {
+            button(text("Deselect All").size(typography::BODY)).style(theme::button_secondary)
+        } else {
+            button(text("Deselect All").size(typography::BODY))
+                .style(theme::button_secondary)
+                .on_press(Message::DeselectAllAuras)
+        };
+
+        // Remove Selected button
+        let has_selected = self.parsed_auras.iter().any(|e| e.selected);
+        let remove_selected_btn = if has_selected && !self.is_importing && !self.is_loading {
+            button(text("Remove Selected").size(typography::BODY))
+                .style(theme::button_secondary)
+                .on_press(Message::RemoveSelectedFromList)
+        } else {
+            button(text("Remove Selected").size(typography::BODY)).style(theme::button_secondary)
+        };
+
+        // Import button
+        let import_btn = if can_import {
+            button(
+                text("Import Selected >>")
+                    .size(typography::BODY)
+                    .color(colors::BG_VOID),
+            )
+            .style(theme::button_primary)
+            .on_press(Message::ShowImportConfirm)
+        } else {
+            button(
+                text("Import Selected >>")
+                    .size(typography::BODY)
+                    .color(colors::TEXT_MUTED),
+            )
+            .style(theme::button_secondary)
+        };
+
+        // Stats
+        let selected_count = self.parsed_auras.iter().filter(|e| e.selected).count();
+        let valid_count = self
+            .parsed_auras
+            .iter()
+            .filter(|e| e.validation.is_valid)
+            .count();
+
+        let stats_format = format!(
+            "{} selected / {} valid / {} total",
+            selected_count,
+            valid_count,
+            self.parsed_auras.len()
+        );
+
+        let controls_row = if !can_import && self.selected_sv_path.is_none() && !self.is_importing {
+            row![
+                button(text("Select All").size(typography::BODY))
+                    .style(theme::button_secondary)
+                    .on_press(Message::SelectAllAuras),
+                button(text("Deselect All").size(typography::BODY))
+                    .style(theme::button_secondary)
+                    .on_press(Message::DeselectAllAuras),
+                button(text("Remove Selected").size(typography::BODY))
+                    .style(theme::button_secondary),
+                button(
+                    text("Import Selected >>")
+                        .size(typography::BODY)
+                        .color(colors::TEXT_MUTED)
+                )
+                .style(theme::button_secondary),
+                text("Select a SavedVariables file first")
+                    .size(typography::BODY)
+                    .color(colors::TEXT_MUTED),
+                space::horizontal(),
+                text(stats_format)
+                    .size(typography::CAPTION)
+                    .color(colors::TEXT_SECONDARY)
+            ]
+            .spacing(spacing::SM)
+            .align_y(iced::Alignment::Center)
+        } else {
+            row![
+                select_all_btn,
+                deselect_all_btn,
+                remove_selected_btn,
+                import_btn,
+                space::horizontal(),
+                text(stats_format)
+                    .size(typography::CAPTION)
+                    .color(colors::TEXT_SECONDARY)
+            ]
+            .spacing(spacing::SM)
+            .align_y(iced::Alignment::Center)
+        };
+
+        content = content.push(controls_row);
+
+        // Progress bar (shown during import)
+        if self.is_importing {
+            use iced::widget::progress_bar;
+            use iced::Border;
+
+            content = content.push(
+                container(
+                    progress_bar(0.0..=1.0, self.import_progress).style(|_theme| {
+                        progress_bar::Style {
+                            background: colors::BG_SURFACE.into(),
+                            bar: colors::GOLD.into(),
+                            border: Border::default().rounded(4.0),
+                        }
+                    }),
+                )
+                .height(Length::Fixed(8.0)),
+            );
+            if !self.import_progress_message.is_empty() {
+                content = content.push(
+                    text(&self.import_progress_message)
+                        .size(typography::CAPTION)
+                        .color(colors::TEXT_SECONDARY),
                 );
-                if !self.loading_message.is_empty() {
-                    ui.label(
-                        egui::RichText::new(&self.loading_message)
-                            .color(theme::colors::TEXT_SECONDARY)
-                            .small(),
-                    );
-                }
+            }
+        }
+
+        // Aura List
+        content = content.push(self.render_aura_list());
+
+        content.into()
+    }
+
+    fn render_aura_list(&self) -> Element<'_, Message> {
+        let mut list_col = Column::new().spacing(spacing::MICRO);
+
+        for (idx, entry) in self.parsed_auras.iter().enumerate() {
+            let is_selected_for_view = self.selected_aura_index == Some(idx);
+            let is_valid = entry.validation.is_valid;
+
+            let mut item_row = row![].spacing(spacing::XS).align_y(iced::Alignment::Center);
+
+            // Checkbox for selection (valid auras only)
+            if is_valid {
+                let checkbox_widget =
+                    checkbox(entry.selected).on_toggle(move |_| Message::ToggleAuraSelection(idx));
+                item_row = item_row.push(checkbox_widget);
+            } else {
+                // Placeholder to maintain alignment
+                item_row = item_row.push(space::horizontal().width(Length::Fixed(24.0)));
             }
 
-            // Paste input area (only shown when toggled)
-            if self.show_paste_input {
-                ui.add_space(8.0);
-
-                // Calculate height for input area
-                let input_height = if self.parsed_auras.is_empty() {
-                    (ui.available_height() - 80.0).max(100.0)
+            // Aura name - always use button for consistent spacing
+            let name = entry.validation.summary();
+            // Dark text only when selected AND JSON view is visible (button has primary bg)
+            let name_color = if is_valid {
+                if is_selected_for_view && self.show_decoded_view {
+                    colors::BG_VOID
                 } else {
-                    150.0
-                };
+                    colors::TEXT_PRIMARY
+                }
+            } else {
+                colors::TEXT_MUTED
+            };
 
-                egui::Frame::group(ui.style())
-                    .fill(theme::colors::BG_ELEVATED)
-                    .stroke(egui::Stroke::new(1.0, theme::colors::BORDER))
-                    .inner_margin(8.0)
-                    .show(ui, |ui| {
-                        egui::ScrollArea::vertical()
-                            .max_height(input_height)
-                            .id_salt("input_scroll")
-                            .show(ui, |ui| {
-                                ui.add(
-                                    egui::TextEdit::multiline(&mut self.input_text)
-                                        .hint_text(
-                                            "Paste WeakAura import strings here (one per line)",
-                                        )
-                                        .font(egui::TextStyle::Monospace)
-                                        .desired_width(f32::INFINITY)
-                                        .desired_rows(8),
-                                );
-                            });
-                    });
+            // Always use a button wrapper for consistent padding/spacing
+            // regardless of whether JSON view is active
+            let label_btn = button(text(name).size(typography::BODY).color(name_color)).style(
+                if is_selected_for_view && self.show_decoded_view {
+                    theme::button_primary
+                } else {
+                    theme::button_frameless
+                },
+            );
 
-                ui.add_space(4.0);
+            // Only make clickable when JSON panel is visible and aura is valid
+            let label_btn = if self.show_decoded_view && is_valid {
+                label_btn.on_press(Message::SelectAuraForPreview(idx))
+            } else {
+                label_btn
+            };
 
-                ui.horizontal(|ui| {
-                    if ui
-                        .button("Paste from clipboard")
-                        .on_hover_text("Paste from clipboard (Ctrl+V)")
-                        .clicked()
-                    {
-                        self.paste_from_clipboard();
-                    }
+            item_row = item_row.push(label_btn);
 
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let parse_btn = egui::Button::new(
-                            egui::RichText::new("Parse")
-                                .strong()
-                                .color(theme::colors::BG_DARKEST),
-                        )
-                        .fill(theme::colors::GOLD)
-                        .rounding(4.0)
-                        .min_size(egui::vec2(80.0, 0.0));
-
-                        if ui
-                            .add(parse_btn)
-                            .on_hover_text("Parse input text for WeakAura strings (Ctrl+Enter)")
-                            .clicked()
-                        {
-                            self.parse_input();
-                        }
-                    });
-                });
+            // Group badge
+            if entry.validation.is_group {
+                item_row = item_row.push(
+                    container(
+                        text(format!("{}", entry.validation.child_count))
+                            .size(typography::CAPTION)
+                            .color(colors::TEXT_MUTED),
+                    )
+                    .padding(iced::Padding::from([2, 6]))
+                    .style(theme::container_inset),
+                );
             }
 
-            // Step 3: Review & Import (only if auras parsed)
-            if !self.parsed_auras.is_empty() {
-                ui.add_space(16.0);
-                ui.separator();
-                ui.add_space(16.0);
+            // Remove button (at the end)
+            let remove_btn = button(text("×").color(colors::ERROR).size(typography::BODY))
+                .style(theme::button_frameless)
+                .on_press(Message::RemoveAuraFromList(idx));
+            item_row = item_row.push(space::horizontal().width(Length::Fill));
+            item_row = item_row.push(remove_btn);
 
-                ui.label(theme::step_header(3, "Review & Import"));
-                ui.add_space(4.0);
+            list_col = list_col.push(item_row);
+        }
 
-                // Selection Controls, Import Button & Stats
-                let can_import = self.selected_sv_path.is_some()
-                    && self
-                        .parsed_auras
-                        .iter()
-                        .any(|e| e.selected && e.validation.is_valid)
-                    && !self.is_importing
-                    && !self.is_loading;
+        let list_container = container(
+            scrollable(list_col)
+                .height(Length::Fill)
+                .style(theme::scrollable_style),
+        )
+        .style(theme::container_inset)
+        .padding(spacing::SM)
+        .height(Length::Fill);
 
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(!self.is_importing, egui::Button::new("Select All"))
-                        .on_hover_text("Select all valid auras for import")
-                        .clicked()
-                    {
-                        for entry in &mut self.parsed_auras {
-                            if entry.validation.is_valid {
-                                entry.selected = true;
-                            }
-                        }
-                    }
-                    if ui
-                        .add_enabled(!self.is_importing, egui::Button::new("Deselect All"))
-                        .on_hover_text("Deselect all auras")
-                        .clicked()
-                    {
-                        for entry in &mut self.parsed_auras {
-                            entry.selected = false;
-                        }
-                    }
-
-                    // Remove Selected button
-                    let has_selected = self.parsed_auras.iter().any(|e| e.selected);
-                    if ui
-                        .add_enabled(
-                            has_selected && !self.is_importing && !self.is_loading,
-                            egui::Button::new("Remove Selected"),
-                        )
-                        .on_hover_text("Remove selected auras from the list")
-                        .clicked()
-                    {
-                        self.parsed_auras.retain(|e| !e.selected);
-                        self.selected_aura_index = None;
-                    }
-
-                    ui.add_space(16.0);
-
-                    // Import button inline
-                    ui.add_enabled_ui(can_import, |ui| {
-                        let button_text = egui::RichText::new("Import Selected >>")
-                            .strong()
-                            .size(14.0);
-                        let button = if can_import {
-                            ui.add(
-                                egui::Button::new(button_text.color(theme::colors::BG_DARKEST))
-                                    .fill(theme::colors::GOLD)
-                                    .min_size(egui::vec2(140.0, 24.0)),
-                            )
-                        } else {
-                            ui.add(
-                                egui::Button::new(button_text.color(theme::colors::TEXT_MUTED))
-                                    .min_size(egui::vec2(140.0, 24.0)),
-                            )
-                        };
-
-                        if button
-                            .on_hover_text("Import selected auras to SavedVariables")
-                            .clicked()
-                        {
-                            self.show_import_confirm = true;
-                        }
-                    });
-
-                    if !can_import && self.selected_sv_path.is_none() && !self.is_importing {
-                        ui.label(theme::muted_text("Select a SavedVariables file first"));
-                    }
-
-                    // Stats aligned right
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let selected_count =
-                            self.parsed_auras.iter().filter(|e| e.selected).count();
-                        let valid_count = self
-                            .parsed_auras
-                            .iter()
-                            .filter(|e| e.validation.is_valid)
-                            .count();
-
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{} selected / {} valid / {} total",
-                                selected_count,
-                                valid_count,
-                                self.parsed_auras.len()
-                            ))
-                            .color(theme::colors::TEXT_SECONDARY),
-                        );
-                    });
-                });
-
-                // Progress bar (shown during import)
-                if self.is_importing {
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        ui.add(
-                            egui::ProgressBar::new(self.import_progress)
-                                .show_percentage()
-                                .animate(true),
-                        );
-                    });
-                    if !self.import_progress_message.is_empty() {
-                        ui.label(
-                            egui::RichText::new(&self.import_progress_message)
-                                .color(theme::colors::TEXT_SECONDARY)
-                                .small(),
-                        );
-                    }
-                }
-
-                ui.add_space(8.0);
-
-                // Aura List (scrollable) - fills remaining space
-                let available_height = ui.available_height();
-                let available_width = ui.available_width();
-                let remove_index: Cell<Option<usize>> = Cell::new(None);
-                egui::Frame::group(ui.style())
-                    .fill(theme::colors::BG_ELEVATED)
-                    .stroke(egui::Stroke::new(1.0, theme::colors::BORDER))
-                    .inner_margin(4.0)
-                    .show(ui, |ui| {
-                        ui.set_min_width(available_width - 16.0);
-                        egui::ScrollArea::both()
-                            .id_salt("auras_scroll")
-                            .max_height(available_height - 16.0)
-                            .show(ui, |ui| {
-                                for (idx, entry) in self.parsed_auras.iter_mut().enumerate() {
-                                    let is_selected_for_view =
-                                        self.selected_aura_index == Some(idx);
-                                    let is_valid = entry.validation.is_valid;
-
-                                    ui.horizontal(|ui| {
-                                        // Remove button
-                                        if ui
-                                            .add(
-                                                egui::Button::new(
-                                                    egui::RichText::new("X")
-                                                        .color(theme::colors::ERROR)
-                                                        .small(),
-                                                )
-                                                .small()
-                                                .frame(false),
-                                            )
-                                            .on_hover_text("Remove from list")
-                                            .clicked()
-                                        {
-                                            remove_index.set(Some(idx));
-                                        }
-
-                                        // Checkbox (only if valid)
-                                        ui.add_enabled(
-                                            is_valid,
-                                            egui::Checkbox::new(&mut entry.selected, ""),
-                                        );
-
-                                        // Aura Info Label (clickable)
-                                        let summary = entry.validation.summary();
-                                        let label_text = if is_valid {
-                                            egui::RichText::new(&summary)
-                                                .color(theme::colors::TEXT_PRIMARY)
-                                        } else {
-                                            egui::RichText::new(&summary)
-                                                .color(theme::colors::TEXT_MUTED)
-                                        };
-
-                                        let response =
-                                            ui.selectable_label(is_selected_for_view, label_text);
-                                        if response.clicked() {
-                                            self.selected_aura_index = Some(idx);
-                                        }
-
-                                        // Group Child Count
-                                        if entry.validation.is_group {
-                                            ui.label(theme::muted_text(&format!(
-                                                "[Group: {} children]",
-                                                entry.validation.child_count
-                                            )));
-                                        }
-
-                                        // Source file (if loaded from folder)
-                                        if let Some(ref source) = entry.source_file {
-                                            ui.label(theme::muted_text(&format!("< {}", source)));
-                                        }
-                                    });
-                                }
-                            });
-                    });
-
-                // Handle removal after the UI closures complete
-                if let Some(idx) = remove_index.get() {
-                    self.parsed_auras.remove(idx);
-                    match self.selected_aura_index {
-                        Some(sel) if sel == idx => self.selected_aura_index = None,
-                        Some(sel) if sel > idx => self.selected_aura_index = Some(sel - 1),
-                        _ => {}
-                    }
-                }
-            }
-        });
+        list_container.into()
     }
 }

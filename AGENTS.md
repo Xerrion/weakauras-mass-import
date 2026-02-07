@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-A Rust GUI application for mass importing WeakAura strings into World of Warcraft's SavedVariables files. Built with egui/eframe for the GUI, using the `weakauras-codec` crate for decoding WeakAura strings.
+A Rust GUI application for mass importing WeakAura strings into World of Warcraft's SavedVariables files. Built with **iced 0.14** for the GUI (Cyber Dark 2026 theme), using the `weakauras-codec` crate for decoding WeakAura strings.
 
-**Tech Stack**: Rust 1.70+, egui 0.29, eframe 0.29, weakauras-codec
+**Tech Stack**: Rust 1.70+, iced 0.14 (tokio), weakauras-codec
 
 ## Build & Run Commands
 
@@ -121,11 +121,11 @@ pub enum WeakAuraError {
 - Implement `Display` for user-facing enums
 - Use `#[derive(Copy)]` for small enums without heap data
 
-### GUI Patterns (egui)
+### GUI Patterns (iced)
 - Separate render methods: `render_menu_bar()`, `render_sidebar()`, etc.
-- Use `egui::Frame::group()` for visual sections
+- Use `container()` for visual sections with `theme::container_*` styles
 - Apply theme colors from `theme::colors::*`
-- Use `egui::RichText` for styled text
+- Use `text().size(typography::*)` for styled text
 
 ### Testing
 - Test module at end of file: `#[cfg(test)] mod tests { ... }`
@@ -164,7 +164,7 @@ Categories for selective updates: `Trigger`, `Load`, `Action`, `Animation`, `Con
 ## Dependencies
 
 Key crates:
-- `eframe`/`egui` - GUI framework
+- `iced` - GUI framework (0.14)
 - `weakauras-codec` - Decoding WeakAura strings
 - `serde`/`serde_json` - Serialization
 - `full_moon` - Lua parsing (in Cargo.toml but lua_parser is custom)
