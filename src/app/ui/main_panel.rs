@@ -46,7 +46,7 @@ impl WeakAuraImporter {
                     .on_hover_text("Load WeakAura strings from a text file")
                     .clicked()
                 {
-                    self.load_from_file();
+                    self.load_from_file_async();
                 }
                 if ui
                     .button("Load folder")

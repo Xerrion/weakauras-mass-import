@@ -395,24 +395,57 @@ impl WeakAuraImporter {
         }
     }
 
-    /// Load from file
-    pub(crate) fn load_from_file(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
+    /// Load from file asynchronously, appending to existing auras with duplicate detection
+    pub(crate) fn load_from_file_async(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
             .add_filter("Text files", &["txt", "md"])
             .add_filter("All files", &["*"])
             .pick_file()
-        {
-            match std::fs::read_to_string(&path) {
+        else {
+            return;
+        };
+
+        let existing_ids = collect_existing_ids(&self.parsed_auras);
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+
+        self.is_loading = true;
+        self.loading_progress = 0.0;
+        self.loading_message = format!("Loading {}...", path.display());
+        self.loading_receiver = Some(rx);
+
+        self.runtime.spawn(async move {
+            let _ = tx
+                .send(super::state::LoadingUpdate::Progress {
+                    current: 0,
+                    total: 1,
+                    message: format!("Reading {}", path.display()),
+                })
+                .await;
+
+            match tokio::fs::read_to_string(&path).await {
                 Ok(content) => {
-                    self.input_text = content;
-                    self.parse_input();
-                    self.set_status(&format!("Loaded from {}", path.display()));
+                    let (entries, added, duplicates, invalid) =
+                        decode_auras_filtered(&content, None, &existing_ids);
+
+                    let _ = tx
+                        .send(super::state::LoadingUpdate::Complete {
+                            entries,
+                            added,
+                            duplicates,
+                            invalid,
+                        })
+                        .await;
                 }
                 Err(e) => {
-                    self.set_error(&format!("Failed to read file: {}", e));
+                    let _ = tx
+                        .send(super::state::LoadingUpdate::Error(format!(
+                            "Failed to read file: {}",
+                            e
+                        )))
+                        .await;
                 }
             }
-        }
+        });
     }
 
     /// Load WeakAura strings from all files in a folder
