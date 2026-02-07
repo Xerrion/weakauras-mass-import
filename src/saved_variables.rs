@@ -363,14 +363,11 @@ impl SavedVariablesManager {
 
     /// Get auras organized in a tree structure (groups with children)
     pub fn get_aura_tree(&self) -> Vec<AuraTreeNode> {
-        let mut nodes: Vec<AuraTreeNode> = Vec::new();
-        let mut children_map: std::collections::HashMap<String, Vec<String>> =
-            std::collections::HashMap::new();
+        let mut children_map: HashMap<String, Vec<String>> = HashMap::new();
 
         // First pass: identify all parent-child relationships
         for (id, data) in &self.displays {
             if let Some(table) = data.as_table() {
-                // Check if this aura has a parent
                 if let Some(LuaValue::String(parent_id)) = table.get("parent") {
                     children_map
                         .entry(parent_id.clone())
@@ -380,48 +377,57 @@ impl SavedVariablesManager {
             }
         }
 
-        // Second pass: build tree nodes for top-level auras (no parent)
-        for (id, data) in &self.displays {
-            if let Some(table) = data.as_table() {
-                // Skip if this aura has a parent (it's a child)
-                if table.get("parent").is_some() {
-                    continue;
-                }
+        // Recursive helper to build a tree node
+        fn build_node(
+            id: &str,
+            displays: &HashMap<String, LuaValue>,
+            children_map: &HashMap<String, Vec<String>>,
+        ) -> AuraTreeNode {
+            let is_group = displays
+                .get(id)
+                .and_then(|d| d.as_table())
+                .map(|t| {
+                    matches!(
+                        t.get("regionType"),
+                        Some(LuaValue::String(rt)) if rt == "group" || rt == "dynamicgroup"
+                    )
+                })
+                .unwrap_or(false);
 
-                // Check if this is a group
-                let is_group = matches!(
-                    table.get("regionType"),
-                    Some(LuaValue::String(rt)) if rt == "group" || rt == "dynamicgroup"
-                );
+            let children = if is_group {
+                children_map
+                    .get(id)
+                    .map(|child_ids| {
+                        let mut children: Vec<AuraTreeNode> = child_ids
+                            .iter()
+                            .map(|child_id| build_node(child_id, displays, children_map))
+                            .collect();
+                        children.sort_by(|a, b| a.id.to_lowercase().cmp(&b.id.to_lowercase()));
+                        children
+                    })
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
 
-                // Get children for this aura (if it's a group)
-                let children = if is_group {
-                    children_map
-                        .get(id)
-                        .map(|child_ids| {
-                            let mut children: Vec<AuraTreeNode> = child_ids
-                                .iter()
-                                .map(|child_id| AuraTreeNode {
-                                    id: child_id.clone(),
-                                    is_group: false,
-                                    children: Vec::new(),
-                                })
-                                .collect();
-                            children.sort_by(|a, b| a.id.to_lowercase().cmp(&b.id.to_lowercase()));
-                            children
-                        })
-                        .unwrap_or_default()
-                } else {
-                    Vec::new()
-                };
-
-                nodes.push(AuraTreeNode {
-                    id: id.clone(),
-                    is_group,
-                    children,
-                });
+            AuraTreeNode {
+                id: id.to_string(),
+                is_group,
+                children,
             }
         }
+
+        // Build tree nodes for top-level auras (no parent)
+        let mut nodes: Vec<AuraTreeNode> = self
+            .displays
+            .iter()
+            .filter(|(_, data)| {
+                data.as_table()
+                    .map(|t| t.get("parent").is_none())
+                    .unwrap_or(false)
+            })
+            .map(|(id, _)| build_node(id, &self.displays, &children_map))
+            .collect();
 
         // Sort top-level nodes: groups first, then alphabetically
         nodes.sort_by(|a, b| match (a.is_group, b.is_group) {

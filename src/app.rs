@@ -731,10 +731,19 @@ impl WeakAuraImporter {
                     // Expand/Collapse all buttons
                     ui.horizontal(|ui| {
                         if ui.small_button("Expand all").clicked() {
-                            for node in &self.existing_auras_tree {
+                            fn collect_groups(
+                                node: &AuraTreeNode,
+                                set: &mut std::collections::HashSet<String>,
+                            ) {
                                 if node.is_group {
-                                    self.expanded_groups.insert(node.id.clone());
+                                    set.insert(node.id.clone());
+                                    for child in &node.children {
+                                        collect_groups(child, set);
+                                    }
                                 }
+                            }
+                            for node in &self.existing_auras_tree {
+                                collect_groups(node, &mut self.expanded_groups);
                             }
                         }
                         if ui.small_button("Collapse all").clicked() {
@@ -798,7 +807,7 @@ impl WeakAuraImporter {
                         .color(theme::colors::GOLD)
                         .strong(),
                 );
-                ui.label(theme::muted_text(&format!("({})", node.children.len())));
+                ui.label(theme::muted_text(&format!("({})", node.total_count() - 1)));
             } else {
                 ui.add_space(18.0); // Align with group items
                 ui.label(egui::RichText::new(&node.id).color(theme::colors::TEXT_SECONDARY));
