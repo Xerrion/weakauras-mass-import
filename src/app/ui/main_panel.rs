@@ -189,6 +189,20 @@ impl WeakAuraImporter {
                         }
                     }
 
+                    // Remove Selected button
+                    let has_selected = self.parsed_auras.iter().any(|e| e.selected);
+                    if ui
+                        .add_enabled(
+                            has_selected && !self.is_importing && !self.is_loading,
+                            egui::Button::new("Remove Selected"),
+                        )
+                        .on_hover_text("Remove selected auras from the list")
+                        .clicked()
+                    {
+                        self.parsed_auras.retain(|e| !e.selected);
+                        self.selected_aura_index = None;
+                    }
+
                     ui.add_space(16.0);
 
                     // Import button inline
