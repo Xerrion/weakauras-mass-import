@@ -42,14 +42,14 @@ impl WeakAuraImporter {
                 }
 
                 if ui
-                    .button("Load file")
+                    .add_enabled(!self.is_loading, egui::Button::new("Load file"))
                     .on_hover_text("Load WeakAura strings from a text file")
                     .clicked()
                 {
                     self.load_from_file_async();
                 }
                 if ui
-                    .button("Load folder")
+                    .add_enabled(!self.is_loading, egui::Button::new("Load folder"))
                     .on_hover_text("Scan folder recursively for WeakAura strings (.txt, .md, .lua)")
                     .clicked()
                 {
@@ -65,6 +65,23 @@ impl WeakAuraImporter {
                     self.show_paste_input = false;
                 }
             });
+
+            // Loading progress bar (shown during async file/folder loading)
+            if self.is_loading {
+                ui.add_space(8.0);
+                ui.add(
+                    egui::ProgressBar::new(self.loading_progress)
+                        .show_percentage()
+                        .animate(true),
+                );
+                if !self.loading_message.is_empty() {
+                    ui.label(
+                        egui::RichText::new(&self.loading_message)
+                            .color(theme::colors::TEXT_SECONDARY)
+                            .small(),
+                    );
+                }
+            }
 
             // Paste input area (only shown when toggled)
             if self.show_paste_input {
@@ -145,7 +162,8 @@ impl WeakAuraImporter {
                         .parsed_auras
                         .iter()
                         .any(|e| e.selected && e.validation.is_valid)
-                    && !self.is_importing;
+                    && !self.is_importing
+                    && !self.is_loading;
 
                 ui.horizontal(|ui| {
                     if ui
