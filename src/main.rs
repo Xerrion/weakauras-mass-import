@@ -17,9 +17,13 @@ fn main() -> iced::Result {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    iced::application(WeakAuraImporter::new, WeakAuraImporter::update, WeakAuraImporter::view)
-        .title("WeakAuras Mass Importer")
-        .theme(WeakAuraImporter::theme)
-        .window_size((1000.0, 700.0))
-        .run()
+    iced::application(
+        WeakAuraImporter::new,
+        WeakAuraImporter::update,
+        WeakAuraImporter::view,
+    )
+    .title("WeakAuras Mass Importer")
+    .theme(WeakAuraImporter::theme)
+    .window_size((1000.0, 700.0))
+    .run()
 }

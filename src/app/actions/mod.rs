@@ -103,8 +103,7 @@ pub(crate) fn notify_decode_results(
 
     if added == 0 && duplicates == 0 && errors.is_empty() {
         toasts.push(
-            toast(&format!("No WeakAura strings found in {}", context))
-                .level(ToastLevel::Warning),
+            toast(&format!("No WeakAura strings found in {}", context)).level(ToastLevel::Warning),
         );
     } else if added > 0 {
         let mut msg = format!("{} aura(s) {}", added, context);
@@ -113,8 +112,6 @@ pub(crate) fn notify_decode_results(
         }
         toasts.push(toast(&msg).title("Success").level(ToastLevel::Success));
     } else if duplicates > 0 && errors.is_empty() {
-        toasts.push(
-            toast(&format!("{} duplicate(s) skipped", duplicates)).level(ToastLevel::Info),
-        );
+        toasts.push(toast(&format!("{} duplicate(s) skipped", duplicates)).level(ToastLevel::Info));
     }
 }

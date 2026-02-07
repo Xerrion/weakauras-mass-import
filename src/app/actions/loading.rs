@@ -136,9 +136,8 @@ impl WeakAuraImporter {
         };
 
         if file_paths.is_empty() {
-            self.toasts.push(
-                toast("No supported files found in folder").level(ToastLevel::Warning),
-            );
+            self.toasts
+                .push(toast("No supported files found in folder").level(ToastLevel::Warning));
             return Task::none();
         }
 

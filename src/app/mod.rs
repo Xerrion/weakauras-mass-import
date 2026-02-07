@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use arboard::Clipboard;
 use iced::widget::{column, container, row, text};
 use iced::{Element, Length, Task, Theme};
-use iced_toasts::{ToastContainer, ToastId, toast_container};
+use iced_toasts::{toast_container, ToastContainer, ToastId};
 
 use crate::categories::UpdateCategory;
 use crate::saved_variables::{
@@ -18,7 +18,9 @@ use crate::saved_variables::{
 };
 use crate::theme as app_theme;
 
-pub use state::{ConflictResolutionUI, ImportUpdate, LoadingUpdate, ParsedAuraEntry, RemovalUpdate, ScanUpdate};
+pub use state::{
+    ConflictResolutionUI, ImportUpdate, LoadingUpdate, ParsedAuraEntry, RemovalUpdate, ScanUpdate,
+};
 
 /// Main application state
 pub struct WeakAuraImporter {
@@ -603,9 +605,9 @@ impl WeakAuraImporter {
 
     /// Render the application view
     pub fn view(&self) -> Element<'_, Message> {
-        use iced::widget::{mouse_area, space};
-        use iced::mouse::Interaction;
         use crate::theme::{colors, spacing, typography};
+        use iced::mouse::Interaction;
+        use iced::widget::{mouse_area, space};
 
         // Header with app title and menu
         let header = container(

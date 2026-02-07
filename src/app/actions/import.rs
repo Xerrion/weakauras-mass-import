@@ -168,7 +168,13 @@ async fn run_import_pipeline(
     }
 
     // Phase 3: Importing auras (50-75%)
-    send_progress(sender, 3, 4, format!("Importing {} aura(s)...", auras.len())).await;
+    send_progress(
+        sender,
+        3,
+        4,
+        format!("Importing {} aura(s)...", auras.len()),
+    )
+    .await;
 
     let result = match manager.add_auras(&auras) {
         Ok(r) => r,
