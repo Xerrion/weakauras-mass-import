@@ -610,7 +610,7 @@ impl WeakAuraImporter {
         // Header with app title and menu
         let header = container(
             row![
-                text("WeakAura Mass Import")
+                text("WeakAuras Mass Importer")
                     .size(typography::TITLE)
                     .color(colors::GOLD),
                 space::horizontal(),
