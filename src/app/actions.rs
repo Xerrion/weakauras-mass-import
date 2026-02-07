@@ -1,5 +1,6 @@
 //! Business logic methods for WeakAuraImporter.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use crate::decoder::{ValidationResult, WeakAura, WeakAuraDecoder};
@@ -8,6 +9,74 @@ use crate::saved_variables::{ConflictAction, ConflictResolution, SavedVariablesM
 
 use super::state::{ConflictResolutionUI, ParsedAuraEntry};
 use super::WeakAuraImporter;
+
+/// Collect the set of aura IDs already present in the parsed auras list.
+fn collect_existing_ids(parsed_auras: &[ParsedAuraEntry]) -> HashSet<String> {
+    parsed_auras
+        .iter()
+        .filter_map(|e| e.validation.aura_id.as_deref())
+        .map(|id| id.to_string())
+        .collect()
+}
+
+/// Decode auras from content, filtering out duplicates already in `existing_ids`.
+/// Returns `(entries, added, duplicates, invalid)`.
+fn decode_auras_filtered(
+    content: &str,
+    source_file: Option<String>,
+    existing_ids: &HashSet<String>,
+) -> (Vec<ParsedAuraEntry>, usize, usize, usize) {
+    let results = WeakAuraDecoder::decode_multiple(content);
+    let mut entries = Vec::new();
+    let mut added = 0;
+    let mut duplicates = 0;
+    let mut invalid = 0;
+
+    for result in results {
+        match result {
+            Ok(aura) => {
+                if existing_ids.contains(&aura.id) {
+                    duplicates += 1;
+                    continue;
+                }
+                added += 1;
+                let validation = ValidationResult {
+                    is_valid: true,
+                    format: Some(format!("v{}", aura.encoding_version)),
+                    aura_id: Some(aura.id.clone()),
+                    is_group: aura.is_group,
+                    child_count: aura.children.len(),
+                    error: None,
+                };
+                entries.push(ParsedAuraEntry {
+                    validation,
+                    aura: Some(aura),
+                    selected: true,
+                    source_file: source_file.clone(),
+                });
+            }
+            Err(e) => {
+                invalid += 1;
+                let validation = ValidationResult {
+                    is_valid: false,
+                    format: None,
+                    aura_id: None,
+                    is_group: false,
+                    child_count: 0,
+                    error: Some(e.to_string()),
+                };
+                entries.push(ParsedAuraEntry {
+                    validation,
+                    aura: None,
+                    selected: true,
+                    source_file: source_file.clone(),
+                });
+            }
+        }
+    }
+
+    (entries, added, duplicates, invalid)
+}
 
 impl WeakAuraImporter {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
