@@ -1,8 +1,8 @@
 //! Test binary to decode WeakAura strings and inspect structure
 
 use std::fs;
-use weakaura_mass_import::decoder::{LuaValue, WeakAuraDecoder};
 use weakauras_codec::LuaValue as CodecLuaValue;
+use weakauras_mass_import::decoder::{LuaValue, WeakAuraDecoder};
 
 fn print_value(value: &LuaValue, indent: usize) {
     let prefix = "  ".repeat(indent);

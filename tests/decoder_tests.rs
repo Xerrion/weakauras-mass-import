@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use weakaura_mass_import::decoder::{LuaValue, WeakAuraDecoder};
-use weakaura_mass_import::lua_parser::LuaParser;
+use weakauras_mass_import::decoder::{LuaValue, WeakAuraDecoder};
+use weakauras_mass_import::lua_parser::LuaParser;
 
 #[test]
 fn test_detect_version() {

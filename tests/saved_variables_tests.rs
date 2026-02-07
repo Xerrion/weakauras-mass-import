@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use weakaura_mass_import::decoder::{LuaValue, WeakAuraDecoder};
-use weakaura_mass_import::saved_variables::SavedVariablesManager;
+use weakauras_mass_import::decoder::{LuaValue, WeakAuraDecoder};
+use weakauras_mass_import::saved_variables::SavedVariablesManager;
 
 /// Helper: decode the Hunter import string and run it through add_auras,
 /// then verify the parent-child hierarchy is correctly preserved.

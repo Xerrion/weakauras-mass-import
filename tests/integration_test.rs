@@ -4,9 +4,9 @@
 
 use std::collections::HashMap;
 
-use weakaura_mass_import::decoder::{LuaValue, WeakAuraDecoder};
-use weakaura_mass_import::lua_parser::LuaParser;
-use weakaura_mass_import::saved_variables::SavedVariablesManager;
+use weakauras_mass_import::decoder::{LuaValue, WeakAuraDecoder};
+use weakauras_mass_import::lua_parser::LuaParser;
+use weakauras_mass_import::saved_variables::SavedVariablesManager;
 
 /// Load a test WA string from a file
 fn load_test_string(filename: &str) -> String {

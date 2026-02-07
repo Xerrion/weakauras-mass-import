@@ -1,10 +1,17 @@
 [package]
-name = "weakaura-mass-import"
-version = "0.1.0"
+name = "weakauras-mass-import"
+version = "1.0.0"
 edition = "2021"
+rust-version = "1.70"
 description = "A GUI tool to mass import WeakAura strings into WoW SavedVariables"
-authors = ["Your Name"]
+authors = ["Xerrion <lasse@xerrion.dk>"]
 license = "MIT"
+repository = "https://github.com/Xerrion/weakauras-mass-import"
+homepage = "https://github.com/Xerrion/weakauras-mass-import"
+readme = "README.md"
+keywords = ["weakauras", "wow", "world-of-warcraft", "gui", "import"]
+categories = ["gui", "games"]
+exclude = ["/Addons/", "*.txt", "*.log"]
 
 [dependencies]
 # GUI
@@ -15,10 +22,10 @@ egui = "0.29"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# WeakAura decoding - Use existing crate!
+# WeakAura decoding
 weakauras-codec = { version = "0.1.1", features = ["serde"] }
 
-# Backup manual decoding deps
+# Compression/encoding (backup for manual decoding)
 base64 = "0.22"
 flate2 = "1.0"
 
@@ -38,20 +45,33 @@ thiserror = "2.0"
 # Logging
 tracing = "0.1"
 tracing-subscriber = "0.3"
-tokio = { version = "1.49.0", features = ["rt-multi-thread", "sync", "fs"] }
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "fs"] }
 
 [lib]
-name = "weakaura_mass_import"
+name = "weakauras_mass_import"
 path = "src/lib.rs"
 
 [[bin]]
-name = "weakaura-mass-import"
+name = "weakauras-mass-import"
 path = "src/main.rs"
 
 [[bin]]
 name = "decode_test"
 path = "src/bin/decode_test.rs"
 
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.dev.package."*"]
+# Optimize dependencies in dev for faster runtime
+opt-level = 2
+
 [profile.release]
 opt-level = 3
 lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

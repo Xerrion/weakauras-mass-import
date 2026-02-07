@@ -1,6 +1,6 @@
 //! Tests for update category mapping.
 
-use weakaura_mass_import::categories::{CategoryMapper, UpdateCategory};
+use weakauras_mass_import::categories::{CategoryMapper, UpdateCategory};
 
 #[test]
 fn test_category_mapping() {

@@ -321,8 +321,6 @@ impl WeakAuraImporter {
                                             egui::Checkbox::new(&mut entry.selected, ""),
                                         );
 
-
-
                                         // Aura Info Label (clickable)
                                         let summary = entry.validation.summary();
                                         let label_text = if is_valid {

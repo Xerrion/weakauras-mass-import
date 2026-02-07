@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use weakaura_mass_import::decoder::LuaValue;
-use weakaura_mass_import::lua_parser::LuaParser;
+use weakauras_mass_import::decoder::LuaValue;
+use weakauras_mass_import::lua_parser::LuaParser;
 
 #[test]
 fn test_parse_simple_table() {

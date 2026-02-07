@@ -281,7 +281,9 @@ impl WeakAuraImporter {
             // If there are conflicts, send back to UI for resolution
             if !conflict_result.conflicts.is_empty() {
                 let _ = tx
-                    .send(super::state::ImportUpdate::ConflictsDetected(conflict_result))
+                    .send(super::state::ImportUpdate::ConflictsDetected(
+                        conflict_result,
+                    ))
                     .await;
                 return;
             }
