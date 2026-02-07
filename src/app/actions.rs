@@ -488,16 +488,6 @@ impl WeakAuraImporter {
     /// Handle loading update from async task
     pub(crate) fn handle_loading_update(&mut self, update: LoadingUpdate) {
         match update {
-            LoadingUpdate::Progress {
-                current,
-                total,
-                message,
-            } => {
-                if total > 0 {
-                    self.loading_progress = current as f32 / total as f32;
-                }
-                self.loading_message = message;
-            }
             LoadingUpdate::Complete {
                 entries,
                 added,
@@ -531,10 +521,6 @@ impl WeakAuraImporter {
     /// Handle import update from async task
     pub(crate) fn handle_import_update(&mut self, update: ImportUpdate) {
         match update {
-            ImportUpdate::Progress { progress, message } => {
-                self.import_progress = progress;
-                self.import_progress_message = message;
-            }
             ImportUpdate::ConflictsDetected(conflict_result) => {
                 // Initialize resolutions with defaults
                 self.conflict_resolutions = conflict_result
@@ -581,9 +567,6 @@ impl WeakAuraImporter {
     /// Handle scan update from async task
     pub(crate) fn handle_scan_update(&mut self, update: ScanUpdate) {
         match update {
-            ScanUpdate::Progress { message } => {
-                self.scanning_message = message;
-            }
             ScanUpdate::Complete { tree, count } => {
                 self.existing_auras_tree = tree;
                 self.existing_auras_count = count;
@@ -605,9 +588,6 @@ impl WeakAuraImporter {
     /// Handle removal update from async task
     pub(crate) fn handle_removal_update(&mut self, update: RemovalUpdate) {
         match update {
-            RemovalUpdate::Progress { message } => {
-                self.removal_message = message;
-            }
             RemovalUpdate::Complete {
                 removed_count,
                 tree,

@@ -6,7 +6,7 @@ use iced::widget::{
 use iced::{Alignment, Element, Length, Padding};
 
 use crate::saved_variables::{ConflictAction, ImportConflict};
-use crate::theme::{self, colors};
+use crate::theme::{self, colors, spacing, typography};
 
 use super::super::{Message, WeakAuraImporter};
 
@@ -32,29 +32,35 @@ impl WeakAuraImporter {
         };
 
         let dialog_content = column![
-            text(format!("Import {} aura(s) to SavedVariables?", count)).size(16),
-            space::vertical().height(Length::Fixed(8.0)),
-            text(target_text).color(colors::TEXT_MUTED),
-            space::vertical().height(Length::Fixed(16.0)),
+            text(format!("Import {} aura(s) to SavedVariables?", count)).size(typography::HEADING),
+            space::vertical().height(Length::Fixed(spacing::SM)),
+            text(target_text)
+                .size(typography::BODY)
+                .color(colors::TEXT_MUTED),
+            space::vertical().height(Length::Fixed(spacing::LG)),
             row![
-                button(text("Cancel"))
+                button(text("Cancel").size(typography::BODY))
                     .style(theme::button_secondary)
                     .on_press(Message::HideImportConfirm),
                 space::horizontal(),
-                button(text("Confirm Import").color(colors::BG_DARKEST))
-                    .style(theme::button_primary)
-                    .on_press(Message::ConfirmImport),
+                button(
+                    text("Confirm Import")
+                        .size(typography::BODY)
+                        .color(colors::BG_DARKEST)
+                )
+                .style(theme::button_primary)
+                .on_press(Message::ConfirmImport),
             ]
-            .spacing(8)
+            .spacing(spacing::SM)
             .align_y(Alignment::Center),
         ]
-        .spacing(4)
-        .padding(20)
+        .spacing(spacing::XS)
+        .padding(spacing::XL)
         .max_width(400);
 
         let dialog_box = container(dialog_content)
             .style(theme::container_modal)
-            .padding(8);
+            .padding(spacing::SM);
 
         let centered_dialog = container(dialog_box)
             .width(Length::Fill)
@@ -85,14 +91,18 @@ impl WeakAuraImporter {
 
         // Header info
         let header = row![
-            text(format!("{} new aura(s) will be added", new_count)).color(colors::SUCCESS),
-            text(" | ").color(colors::TEXT_MUTED),
-            text(format!("{} aura(s) already exist", conflict_count)).color(colors::GOLD),
+            text(format!("{} new aura(s) will be added", new_count))
+                .size(typography::BODY)
+                .color(colors::SUCCESS),
+            text(" | ").size(typography::BODY).color(colors::TEXT_MUTED),
+            text(format!("{} aura(s) already exist", conflict_count))
+                .size(typography::BODY)
+                .color(colors::GOLD),
         ]
-        .spacing(8);
+        .spacing(spacing::SM);
 
         // Global category selection header
-        let global_cat_header = text("Default Categories to Update:").size(14);
+        let global_cat_header = text("Default Categories to Update:").size(typography::BODY);
 
         // Category checkboxes (simplified grid - row of 4)
         // Build rows without borrowing a local Vec
@@ -100,65 +110,72 @@ impl WeakAuraImporter {
 
         // Bulk action buttons
         let bulk_actions = row![
-            button(text("Import All").size(12))
+            button(text("Import All").size(typography::CAPTION))
                 .style(theme::button_secondary)
                 .on_press(Message::SetAllConflictsAction(
                     ConflictAction::UpdateSelected
                 )),
-            button(text("Skip All").size(12))
+            button(text("Skip All").size(typography::CAPTION))
                 .style(theme::button_secondary)
                 .on_press(Message::SetAllConflictsAction(ConflictAction::Skip)),
-            button(text("Replace All").size(12))
+            button(text("Replace All").size(typography::CAPTION))
                 .style(theme::button_secondary)
                 .on_press(Message::SetAllConflictsAction(ConflictAction::ReplaceAll)),
         ]
-        .spacing(8);
+        .spacing(spacing::SM);
 
         // Conflict list
         let conflict_list = self.render_conflict_list(&conflicts);
 
-        let conflict_list_container =
-            container(scrollable(conflict_list).height(Length::Fixed(250.0)))
-                .style(theme::container_elevated)
-                .padding(8);
+        let conflict_list_container = container(
+            scrollable(conflict_list)
+                .height(Length::Fixed(250.0))
+                .style(theme::scrollable_style),
+        )
+        .style(theme::container_elevated)
+        .padding(spacing::SM);
 
         // Action buttons
         let action_buttons = row![
-            button(text("Cancel"))
+            button(text("Cancel").size(typography::BODY))
                 .style(theme::button_secondary)
                 .on_press(Message::HideConflictDialog),
             space::horizontal(),
-            button(text("Import").color(colors::BG_DARKEST))
-                .style(theme::button_primary)
-                .on_press(Message::ConfirmConflictResolutions),
+            button(
+                text("Import")
+                    .size(typography::BODY)
+                    .color(colors::BG_DARKEST)
+            )
+            .style(theme::button_primary)
+            .on_press(Message::ConfirmConflictResolutions),
         ]
-        .spacing(8)
+        .spacing(spacing::SM)
         .align_y(Alignment::Center);
 
         let dialog_content = column![
             text("Import Conflicts Detected")
-                .size(18)
+                .size(typography::TITLE)
                 .color(colors::GOLD),
-            space::vertical().height(Length::Fixed(8.0)),
+            space::vertical().height(Length::Fixed(spacing::SM)),
             header,
-            space::vertical().height(Length::Fixed(12.0)),
+            space::vertical().height(Length::Fixed(spacing::MD)),
             global_cat_header,
             categories_grid,
-            space::vertical().height(Length::Fixed(12.0)),
-            text("Conflicting Auras:").size(14),
+            space::vertical().height(Length::Fixed(spacing::MD)),
+            text("Conflicting Auras:").size(typography::BODY),
             bulk_actions,
-            space::vertical().height(Length::Fixed(8.0)),
+            space::vertical().height(Length::Fixed(spacing::SM)),
             conflict_list_container,
-            space::vertical().height(Length::Fixed(12.0)),
+            space::vertical().height(Length::Fixed(spacing::MD)),
             action_buttons,
         ]
-        .spacing(4)
-        .padding(20)
+        .spacing(spacing::XS)
+        .padding(spacing::XL)
         .max_width(700);
 
         let dialog_box = container(dialog_content)
             .style(theme::container_modal)
-            .padding(8);
+            .padding(spacing::SM);
 
         let centered_dialog = container(dialog_box)
             .width(Length::Fill)
@@ -183,45 +200,45 @@ impl WeakAuraImporter {
             checkbox(self.global_categories.contains(&UpdateCategory::Name))
                 .label("Name")
                 .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Name))
-                .text_size(12),
+                .text_size(typography::CAPTION),
             checkbox(self.global_categories.contains(&UpdateCategory::Display))
                 .label("Display")
                 .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Display))
-                .text_size(12),
+                .text_size(typography::CAPTION),
             checkbox(self.global_categories.contains(&UpdateCategory::Trigger))
                 .label("Trigger")
                 .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Trigger))
-                .text_size(12),
+                .text_size(typography::CAPTION),
             checkbox(self.global_categories.contains(&UpdateCategory::Load))
                 .label("Load")
                 .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Load))
-                .text_size(12),
+                .text_size(typography::CAPTION),
         ]
-        .spacing(12);
+        .spacing(spacing::MD);
 
         // Row 2: Action, Animation, Conditions, Author Options
         let row2 = row![
             checkbox(self.global_categories.contains(&UpdateCategory::Action))
                 .label("Actions")
                 .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Action))
-                .text_size(12),
+                .text_size(typography::CAPTION),
             checkbox(self.global_categories.contains(&UpdateCategory::Animation))
                 .label("Animations")
                 .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Animation))
-                .text_size(12),
+                .text_size(typography::CAPTION),
             checkbox(self.global_categories.contains(&UpdateCategory::Conditions))
                 .label("Conditions")
                 .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Conditions))
-                .text_size(12),
+                .text_size(typography::CAPTION),
             checkbox(
                 self.global_categories
                     .contains(&UpdateCategory::AuthorOptions)
             )
             .label("Author Options")
             .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::AuthorOptions))
-            .text_size(12),
+            .text_size(typography::CAPTION),
         ]
-        .spacing(12);
+        .spacing(spacing::MD);
 
         // Row 3: Arrangement, Anchor, User Config, Metadata
         let row3 = row![
@@ -231,27 +248,31 @@ impl WeakAuraImporter {
             )
             .label("Arrangement")
             .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Arrangement))
-            .text_size(12),
+            .text_size(typography::CAPTION),
             checkbox(self.global_categories.contains(&UpdateCategory::Anchor))
                 .label("Anchor")
                 .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Anchor))
-                .text_size(12),
+                .text_size(typography::CAPTION),
             checkbox(self.global_categories.contains(&UpdateCategory::UserConfig))
                 .label("User Config")
                 .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::UserConfig))
-                .text_size(12),
+                .text_size(typography::CAPTION),
             checkbox(self.global_categories.contains(&UpdateCategory::Metadata))
                 .label("Metadata")
                 .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Metadata))
-                .text_size(12),
+                .text_size(typography::CAPTION),
         ]
-        .spacing(12);
+        .spacing(spacing::MD);
 
-        Column::new().push(row1).push(row2).push(row3).spacing(4)
+        Column::new()
+            .push(row1)
+            .push(row2)
+            .push(row3)
+            .spacing(spacing::XS)
     }
 
     fn render_conflict_list(&self, conflicts: &[ImportConflict]) -> Column<'_, Message> {
-        let mut list_col = Column::new().spacing(8);
+        let mut list_col = Column::new().spacing(spacing::SM);
 
         for (idx, conflict) in conflicts.iter().enumerate() {
             let resolution = &self.conflict_resolutions[idx];
@@ -266,7 +287,7 @@ impl WeakAuraImporter {
             let action_picker = pick_list(action_options, Some(resolution.action), move |action| {
                 Message::SetConflictAction(idx, action)
             })
-            .text_size(12)
+            .text_size(typography::CAPTION)
             .width(Length::Fixed(90.0));
 
             // Aura name with color based on action
@@ -276,16 +297,19 @@ impl WeakAuraImporter {
             };
 
             let aura_id = conflict.aura_id.clone();
-            let mut item_row = row![action_picker, text(aura_id).color(name_color)]
-                .spacing(8)
-                .align_y(Alignment::Center);
+            let mut item_row = row![
+                action_picker,
+                text(aura_id).size(typography::BODY).color(name_color)
+            ]
+            .spacing(spacing::SM)
+            .align_y(Alignment::Center);
 
             // Group indicator
             if conflict.is_group {
                 item_row = item_row.push(
                     text(format!("[Group: {} children]", conflict.child_count))
                         .color(colors::TEXT_MUTED)
-                        .size(12),
+                        .size(typography::CAPTION),
                 );
             }
 
@@ -299,7 +323,7 @@ impl WeakAuraImporter {
                 item_row = item_row.push(
                     text(format!("Changes: {}", changed_names.join(", ")))
                         .color(colors::TEXT_MUTED)
-                        .size(12),
+                        .size(typography::CAPTION),
                 );
             }
 
@@ -307,7 +331,7 @@ impl WeakAuraImporter {
             if resolution.action == ConflictAction::UpdateSelected {
                 let expand_text = if resolution.expanded { "v" } else { ">" };
                 item_row = item_row.push(
-                    button(text(expand_text).size(12))
+                    button(text(expand_text).size(typography::CAPTION))
                         .style(theme::button_frameless)
                         .on_press(Message::ToggleConflictExpanded(idx)),
                 );
@@ -353,21 +377,21 @@ impl WeakAuraImporter {
             checkbox(resolution.categories.contains(&UpdateCategory::Name))
                 .label("Name")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Name))
-                .text_size(11),
+                .text_size(typography::SMALL),
             checkbox(resolution.categories.contains(&UpdateCategory::Display))
                 .label("Display")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Display))
-                .text_size(11),
+                .text_size(typography::SMALL),
             checkbox(resolution.categories.contains(&UpdateCategory::Trigger))
                 .label("Trigger")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Trigger))
-                .text_size(11),
+                .text_size(typography::SMALL),
             checkbox(resolution.categories.contains(&UpdateCategory::Load))
                 .label("Load")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Load))
-                .text_size(11),
+                .text_size(typography::SMALL),
         ]
-        .spacing(8);
+        .spacing(spacing::SM);
 
         // Row 2: Action, Animation, Conditions, Author Options
         let row2 = row![
@@ -375,18 +399,18 @@ impl WeakAuraImporter {
             checkbox(resolution.categories.contains(&UpdateCategory::Action))
                 .label("Actions")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Action))
-                .text_size(11),
+                .text_size(typography::SMALL),
             checkbox(resolution.categories.contains(&UpdateCategory::Animation))
                 .label("Animations")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Animation))
-                .text_size(11),
+                .text_size(typography::SMALL),
             checkbox(resolution.categories.contains(&UpdateCategory::Conditions))
                 .label("Conditions")
                 .on_toggle(move |_| Message::ToggleConflictCategory(
                     idx,
                     UpdateCategory::Conditions
                 ))
-                .text_size(11),
+                .text_size(typography::SMALL),
             checkbox(
                 resolution
                     .categories
@@ -394,9 +418,9 @@ impl WeakAuraImporter {
             )
             .label("Author Options")
             .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::AuthorOptions))
-            .text_size(11),
+            .text_size(typography::SMALL),
         ]
-        .spacing(8);
+        .spacing(spacing::SM);
 
         // Row 3: Arrangement, Anchor, User Config, Metadata
         let row3 = row![
@@ -407,31 +431,31 @@ impl WeakAuraImporter {
                     idx,
                     UpdateCategory::Arrangement
                 ))
-                .text_size(11),
+                .text_size(typography::SMALL),
             checkbox(resolution.categories.contains(&UpdateCategory::Anchor))
                 .label("Anchor")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Anchor))
-                .text_size(11),
+                .text_size(typography::SMALL),
             checkbox(resolution.categories.contains(&UpdateCategory::UserConfig))
                 .label("User Config")
                 .on_toggle(move |_| Message::ToggleConflictCategory(
                     idx,
                     UpdateCategory::UserConfig
                 ))
-                .text_size(11),
+                .text_size(typography::SMALL),
             checkbox(resolution.categories.contains(&UpdateCategory::Metadata))
                 .label("Metadata")
                 .on_toggle(move |_| Message::ToggleConflictCategory(idx, UpdateCategory::Metadata))
-                .text_size(11),
+                .text_size(typography::SMALL),
         ]
-        .spacing(8);
+        .spacing(spacing::SM);
 
         Column::new()
             .push(row1)
             .push(row2)
             .push(row3)
             .spacing(2)
-            .padding(Padding::default().bottom(8.0))
+            .padding(Padding::default().bottom(spacing::SM))
     }
 
     /// Overlay the remove confirmation dialog on top of the main view
@@ -442,44 +466,57 @@ impl WeakAuraImporter {
         let count = self.pending_removal_ids.len();
 
         // List of IDs to be removed
-        let mut id_list = Column::new().spacing(4);
+        let mut id_list = Column::new().spacing(spacing::XS);
         for id in &self.pending_removal_ids {
-            id_list = id_list.push(text(id).color(colors::TEXT_SECONDARY).size(13));
+            id_list = id_list.push(
+                text(id)
+                    .size(typography::BODY)
+                    .color(colors::TEXT_SECONDARY),
+            );
         }
 
-        let id_list_container = container(scrollable(id_list).height(Length::Fixed(150.0)))
-            .style(theme::container_elevated)
-            .padding(8)
-            .width(Length::Fill);
+        let id_list_container = container(
+            scrollable(id_list)
+                .height(Length::Fixed(150.0))
+                .style(theme::scrollable_style),
+        )
+        .style(theme::container_elevated)
+        .padding(spacing::SM)
+        .width(Length::Fill);
 
         let dialog_content = column![
-            text(format!("Remove {} aura(s) from SavedVariables?", count)).size(16),
-            space::vertical().height(Length::Fixed(4.0)),
+            text(format!("Remove {} aura(s) from SavedVariables?", count))
+                .size(typography::HEADING),
+            space::vertical().height(Length::Fixed(spacing::XS)),
             text("Groups will have all their children removed recursively.")
                 .color(colors::TEXT_MUTED)
-                .size(12),
-            space::vertical().height(Length::Fixed(8.0)),
+                .size(typography::CAPTION),
+            space::vertical().height(Length::Fixed(spacing::SM)),
             id_list_container,
-            space::vertical().height(Length::Fixed(12.0)),
+            space::vertical().height(Length::Fixed(spacing::MD)),
             row![
-                button(text("Cancel"))
+                button(text("Cancel").size(typography::BODY))
                     .style(theme::button_secondary)
                     .on_press(Message::HideRemoveConfirm),
                 space::horizontal(),
-                button(text("Remove").color(colors::BG_DARKEST))
-                    .style(theme::button_danger)
-                    .on_press(Message::ConfirmRemoval),
+                button(
+                    text("Remove")
+                        .size(typography::BODY)
+                        .color(colors::BG_DARKEST)
+                )
+                .style(theme::button_danger)
+                .on_press(Message::ConfirmRemoval),
             ]
-            .spacing(8)
+            .spacing(spacing::SM)
             .align_y(Alignment::Center),
         ]
-        .spacing(4)
-        .padding(20)
+        .spacing(spacing::XS)
+        .padding(spacing::XL)
         .max_width(450);
 
         let dialog_box = container(dialog_content)
             .style(theme::container_modal)
-            .padding(8);
+            .padding(spacing::SM);
 
         let centered_dialog = container(dialog_box)
             .width(Length::Fill)

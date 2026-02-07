@@ -4,25 +4,25 @@ mod dialogs;
 mod main_panel;
 mod sidebar;
 
-use iced::widget::{button, column, container, row, space, text};
+use iced::widget::{button, column, container, row, scrollable, space, text};
 use iced::{Element, Length};
 
-use crate::theme::{self, colors};
+use crate::theme::{self, colors, spacing, typography};
 
 use super::{Message, WeakAuraImporter};
 
 impl WeakAuraImporter {
     /// Render the menu bar
     pub(crate) fn render_menu_bar(&self) -> Element<'_, Message> {
-        let file_menu = button(text("File"))
+        let file_menu = button(text("File").size(typography::BODY))
             .style(theme::button_secondary)
             .on_press(Message::LoadFromFile);
 
-        let edit_menu = button(text("Paste"))
+        let edit_menu = button(text("Paste").size(typography::BODY))
             .style(theme::button_secondary)
             .on_press(Message::PasteFromClipboard);
 
-        let clear_btn = button(text("Clear"))
+        let clear_btn = button(text("Clear").size(typography::BODY))
             .style(theme::button_secondary)
             .on_press(Message::ClearInput);
 
@@ -31,7 +31,7 @@ impl WeakAuraImporter {
         } else {
             "Show JSON"
         };
-        let view_menu = button(text(view_label))
+        let view_menu = button(text(view_label).size(typography::BODY))
             .style(theme::button_secondary)
             .on_press(Message::ToggleDecodedView);
 
@@ -42,12 +42,12 @@ impl WeakAuraImporter {
             view_menu,
             space::horizontal()
         ]
-        .spacing(8)
-        .padding(8);
+        .spacing(spacing::SM)
+        .padding(spacing::SM);
 
         container(menu_row)
             .width(Length::Fill)
-            .style(theme::container_panel)
+            .style(theme::container_toolbar)
             .into()
     }
 
@@ -59,12 +59,14 @@ impl WeakAuraImporter {
             colors::TEXT_SECONDARY
         };
 
-        let status_text = text(&self.status_message).color(status_color);
+        let status_text = text(&self.status_message)
+            .size(typography::CAPTION)
+            .color(status_color);
 
         container(status_text)
             .width(Length::Fill)
-            .padding(8)
-            .style(theme::container_panel)
+            .padding(spacing::SM)
+            .style(theme::container_status_bar)
             .into()
     }
 
@@ -75,25 +77,33 @@ impl WeakAuraImporter {
                 if let Some(aura) = &entry.aura {
                     let json = serde_json::to_string_pretty(&aura.data)
                         .unwrap_or_else(|_| "Failed to serialize".to_string());
-                    text(json).size(12)
+                    text(json).size(typography::SMALL)
                 } else {
-                    text("No aura data").color(colors::TEXT_MUTED)
+                    text("No aura data")
+                        .size(typography::BODY)
+                        .color(colors::TEXT_MUTED)
                 }
             } else {
-                text("Invalid selection").color(colors::TEXT_MUTED)
+                text("Invalid selection")
+                    .size(typography::BODY)
+                    .color(colors::TEXT_MUTED)
             }
         } else {
-            text("Select an aura to view decoded data").color(colors::TEXT_MUTED)
+            text("Select an aura to view decoded data")
+                .size(typography::BODY)
+                .color(colors::TEXT_MUTED)
         };
 
-        let header = text("Decoded Data").size(16).color(colors::GOLD);
+        let header = text("Decoded Data")
+            .size(typography::HEADING)
+            .color(colors::GOLD);
 
         let panel_content = column![header, content]
-            .spacing(8)
-            .padding(12)
+            .spacing(spacing::SM)
+            .padding(spacing::MD)
             .width(Length::Fixed(300.0));
 
-        container(iced::widget::scrollable(panel_content))
+        container(scrollable(panel_content).style(theme::scrollable_style))
             .width(Length::Fixed(300.0))
             .height(Length::Fill)
             .style(theme::container_panel)
