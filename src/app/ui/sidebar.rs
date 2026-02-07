@@ -106,8 +106,20 @@ impl WeakAuraImporter {
                     );
                 }
 
-                // Existing auras tree
-                if !self.existing_auras_tree.is_empty() {
+                // Existing auras tree (or scanning indicator)
+                if self.is_scanning {
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(
+                            egui::RichText::new(&self.scanning_message)
+                                .color(theme::colors::TEXT_SECONDARY),
+                        );
+                    });
+                } else if !self.existing_auras_tree.is_empty() {
                     ui.add_space(8.0);
                     ui.separator();
                     ui.add_space(4.0);
@@ -218,13 +230,34 @@ impl WeakAuraImporter {
         ui.horizontal(|ui| {
             ui.add_space(indent);
 
-            // Selection checkbox for removal
-            let mut is_selected = self.selected_for_removal.contains(&node.id);
-            if ui.checkbox(&mut is_selected, "").changed() {
+            // Custom-painted checkbox for removal selection (always visible)
+            let is_selected = self.selected_for_removal.contains(&node.id);
+            let checkbox_size = egui::vec2(14.0, 14.0);
+            let (rect, response) = ui.allocate_exact_size(checkbox_size, egui::Sense::click());
+
+            if ui.is_rect_visible(rect) {
+                let painter = ui.painter();
+                // Always-visible border
+                painter.rect_stroke(
+                    rect.shrink(1.0),
+                    egui::Rounding::same(2.0),
+                    egui::Stroke::new(1.5, theme::colors::TEXT_SECONDARY),
+                );
+                // Gold fill when checked
                 if is_selected {
-                    self.selected_for_removal.insert(node.id.clone());
-                } else {
+                    painter.rect_filled(
+                        rect.shrink(3.0),
+                        egui::Rounding::same(1.0),
+                        theme::colors::GOLD,
+                    );
+                }
+            }
+
+            if response.clicked() {
+                if is_selected {
                     self.selected_for_removal.remove(&node.id);
+                } else {
+                    self.selected_for_removal.insert(node.id.clone());
                 }
             }
 

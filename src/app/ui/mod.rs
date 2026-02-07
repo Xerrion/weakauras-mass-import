@@ -14,7 +14,7 @@ impl WeakAuraImporter {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Load from file...").clicked() {
-                        self.load_from_file();
+                        self.load_from_file_async();
                         ui.close_menu();
                     }
                     if ui.button("Exit").clicked() {

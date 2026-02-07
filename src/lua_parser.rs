@@ -317,15 +317,19 @@ impl<'a> LuaTableParser<'a> {
                 _ => return Err(WeakAuraError::LuaParseError("Invalid key type".to_string())),
             })
         } else if self.peek_identifier() {
-            // identifier = value
+            // Could be `identifier = value` (key-value pair) or an implicit array
+            // element like `true`, `false`, `nil`, `math.huge`.
+            // Save position so we can backtrack if it turns out not to be a key.
+            let saved_pos = self.pos;
             let ident = self.parse_identifier()?;
             self.skip_whitespace();
             if self.peek() == Some('=') {
                 self.consume('=');
                 Some(ident)
             } else {
-                // Not a key, backtrack (this is tricky)
-                return Err(WeakAuraError::LuaParseError("Expected '='".to_string()));
+                // Not a key — backtrack and let it be parsed as an implicit value
+                self.pos = saved_pos;
+                None
             }
         } else {
             // Implicit index
@@ -345,7 +349,21 @@ impl<'a> LuaTableParser<'a> {
             Some('{') => self.parse_table(),
             Some('"') | Some('\'') => self.parse_string(),
             Some('[') if self.peek_long_string() => self.parse_long_string(),
-            Some(c) if c.is_ascii_digit() || c == '-' || c == '.' => self.parse_number(),
+            Some('(') if self.peek_nan() => {
+                // (0/0) — NaN
+                self.advance_by(5); // consume "(0/0)"
+                Ok(LuaValue::Number(f64::NAN))
+            }
+            Some(c) if c.is_ascii_digit() || c == '.' => self.parse_number(),
+            Some('-') => {
+                // Could be negative number or -math.huge
+                if self.peek_word("-math.huge") {
+                    self.advance_by(10);
+                    Ok(LuaValue::Number(f64::NEG_INFINITY))
+                } else {
+                    self.parse_number()
+                }
+            }
             Some('t') if self.peek_word("true") => {
                 self.advance_by(4);
                 Ok(LuaValue::Bool(true))
@@ -357,6 +375,10 @@ impl<'a> LuaTableParser<'a> {
             Some('n') if self.peek_word("nil") => {
                 self.advance_by(3);
                 Ok(LuaValue::Nil)
+            }
+            Some('m') if self.peek_word("math.huge") => {
+                self.advance_by(9);
+                Ok(LuaValue::Number(f64::INFINITY))
             }
             _ => {
                 // Try to parse as identifier (could be a reference)
@@ -587,7 +609,13 @@ impl<'a> LuaTableParser<'a> {
     }
 
     fn peek_word(&self, word: &str) -> bool {
-        self.input[self.pos..].starts_with(word)
+        let rest = &self.input[self.pos..];
+        if !rest.starts_with(word) {
+            return false;
+        }
+        // Ensure the character after the word is NOT alphanumeric or underscore
+        // (word boundary check), so "truename" doesn't match "true"
+        !matches!(rest[word.len()..].chars().next(), Some(c) if c.is_alphanumeric() || c == '_')
     }
 
     fn peek_long_string(&self) -> bool {
@@ -596,6 +624,10 @@ impl<'a> LuaTableParser<'a> {
         }
         let rest = &self.input[self.pos + 1..];
         rest.starts_with('[') || rest.starts_with('=')
+    }
+
+    fn peek_nan(&self) -> bool {
+        self.input[self.pos..].starts_with("(0/0)")
     }
 
     fn consume(&mut self, expected: char) -> bool {

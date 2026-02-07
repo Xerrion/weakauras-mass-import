@@ -4,9 +4,10 @@ use std::collections::HashSet;
 
 use crate::categories::UpdateCategory;
 use crate::decoder::{ValidationResult, WeakAura};
-use crate::saved_variables::ConflictAction;
+use crate::saved_variables::{AuraTreeNode, ConflictAction, ConflictDetectionResult, ImportResult};
 
 /// Entry for a parsed aura in the list
+#[derive(Clone)]
 pub(crate) struct ParsedAuraEntry {
     pub validation: ValidationResult,
     pub aura: Option<WeakAura>,
@@ -26,4 +27,67 @@ pub(crate) struct ConflictResolutionUI {
     pub categories: HashSet<UpdateCategory>,
     /// Whether to show details
     pub expanded: bool,
+}
+
+/// Progress update from background loading task
+#[derive(Clone)]
+pub(crate) enum LoadingUpdate {
+    /// Incremental progress report
+    Progress {
+        current: usize,
+        total: usize,
+        message: String,
+    },
+    /// Loading completed successfully
+    Complete {
+        entries: Vec<ParsedAuraEntry>,
+        added: usize,
+        duplicates: usize,
+        invalid: usize,
+    },
+    /// Loading failed with an error
+    Error(String),
+}
+
+/// Progress update from background import task
+pub(crate) enum ImportUpdate {
+    /// Incremental progress report
+    Progress { progress: f32, message: String },
+    /// Conflicts detected — hand data back to UI for resolution
+    ConflictsDetected(ConflictDetectionResult),
+    /// Import completed successfully
+    Complete {
+        result: ImportResult,
+        tree: Vec<AuraTreeNode>,
+        tree_count: usize,
+    },
+    /// Import failed with an error
+    Error(String),
+}
+
+/// Progress update from background SavedVariables scanning task
+pub(crate) enum ScanUpdate {
+    /// Progress message
+    Progress { message: String },
+    /// Scanning completed successfully
+    Complete {
+        tree: Vec<AuraTreeNode>,
+        count: usize,
+    },
+    /// Scanning failed with an error
+    Error(String),
+}
+
+/// Progress update from background aura removal task
+pub(crate) enum RemovalUpdate {
+    /// Progress message
+    Progress { message: String },
+    /// Removal completed successfully
+    Complete {
+        removed_count: usize,
+        tree: Vec<AuraTreeNode>,
+        tree_count: usize,
+    },
+    /// Removal failed with an error
+    Error(String),
 }

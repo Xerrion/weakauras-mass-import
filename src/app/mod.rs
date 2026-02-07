@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use arboard::Clipboard;
 use eframe::egui;
+use tokio::sync::mpsc;
 
 use crate::categories::UpdateCategory;
 use crate::saved_variables::{
@@ -16,7 +17,7 @@ use crate::saved_variables::{
 };
 use crate::theme;
 
-use state::{ConflictResolutionUI, ParsedAuraEntry};
+use state::{ConflictResolutionUI, ImportUpdate, LoadingUpdate, ParsedAuraEntry, RemovalUpdate};
 
 /// Main application state
 pub struct WeakAuraImporter {
@@ -74,6 +75,30 @@ pub struct WeakAuraImporter {
     pub(crate) show_remove_confirm: bool,
     /// IDs pending removal (populated when confirm dialog opens)
     pub(crate) pending_removal_ids: Vec<String>,
+    /// Tokio runtime for async operations
+    pub(crate) runtime: tokio::runtime::Runtime,
+    /// Whether a background loading task is in progress
+    pub(crate) is_loading: bool,
+    /// Loading progress (0.0 to 1.0)
+    pub(crate) loading_progress: f32,
+    /// Loading progress message
+    pub(crate) loading_message: String,
+    /// Receiver for loading updates from background tasks
+    pub(crate) loading_receiver: Option<mpsc::Receiver<LoadingUpdate>>,
+    /// Receiver for import updates from background tasks
+    pub(crate) import_receiver: Option<mpsc::Receiver<ImportUpdate>>,
+    /// Whether a background scanning task (loading SavedVariables) is in progress
+    pub(crate) is_scanning: bool,
+    /// Scanning progress message
+    pub(crate) scanning_message: String,
+    /// Receiver for scan updates from background tasks
+    pub(crate) scan_receiver: Option<mpsc::Receiver<state::ScanUpdate>>,
+    /// Whether a background removal task is in progress
+    pub(crate) is_removing: bool,
+    /// Removal progress message
+    pub(crate) removal_message: String,
+    /// Receiver for removal updates from background tasks
+    pub(crate) removal_receiver: Option<mpsc::Receiver<RemovalUpdate>>,
 }
 
 impl Default for WeakAuraImporter {
@@ -106,12 +131,35 @@ impl Default for WeakAuraImporter {
             selected_for_removal: HashSet::new(),
             show_remove_confirm: false,
             pending_removal_ids: Vec::new(),
+            runtime: tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime"),
+            is_loading: false,
+            loading_progress: 0.0,
+            loading_message: String::new(),
+            loading_receiver: None,
+            import_receiver: None,
+            is_scanning: false,
+            scanning_message: String::new(),
+            scan_receiver: None,
+            is_removing: false,
+            removal_message: String::new(),
+            removal_receiver: None,
         }
     }
 }
 
 impl eframe::App for WeakAuraImporter {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Process async results from background tasks
+        self.poll_loading();
+        self.poll_importing();
+        self.poll_scanning();
+        self.poll_removing();
+
+        // Request repaint while any background task is in progress
+        if self.is_loading || self.is_importing || self.is_scanning || self.is_removing {
+            ctx.request_repaint();
+        }
+
         theme::configure_theme(ctx);
         self.render_menu_bar(ctx);
         self.render_status_bar(ctx);
