@@ -6,6 +6,7 @@ use crate::categories::{CategoryMapper, UpdateCategory};
 use crate::decoder::{LuaValue, WeakAura};
 use crate::error::{Result, WeakAuraError};
 use crate::lua_parser::LuaParser;
+use crate::util;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -161,92 +162,26 @@ impl SavedVariablesManager {
         let mut replaced = Vec::new();
 
         for aura in auras {
-            let parent_data = aura.data.clone();
+            let hierarchy = util::build_children_hierarchy(aura);
 
-            // Build a map of parent_id -> ordered list of child_ids from the flat child_data.
-            // Each child already has its correct `parent` field set in the import data.
-            // We use this map to reconstruct `controlledChildren` for each group.
-            let mut children_by_parent: HashMap<String, Vec<String>> = HashMap::new();
-
-            // First pass: insert all children as-is (preserving their existing parent field)
-            // and build the parent->children map.
-            for child_data in &aura.child_data {
-                if let Some(child_table) = child_data.as_table() {
-                    if let Some(LuaValue::String(child_id)) = child_table.get("id") {
-                        // Determine the parent for this child: use existing parent field,
-                        // fall back to the root aura id if not set.
-                        let parent_id = child_table
-                            .get("parent")
-                            .and_then(|v| {
-                                if let LuaValue::String(s) = v {
-                                    Some(s.clone())
-                                } else {
-                                    None
-                                }
-                            })
-                            .unwrap_or_else(|| aura.id.clone());
-
-                        children_by_parent
-                            .entry(parent_id.clone())
-                            .or_default()
-                            .push(child_id.clone());
-
-                        // Insert child data as-is, preserving its parent field
-                        let mut child_value = child_data.clone();
-
-                        // Only set parent if it doesn't already have one
-                        if let Some(child_table_mut) = child_value.as_table_mut() {
-                            if !child_table_mut.contains_key("parent") {
-                                child_table_mut.insert(
-                                    "parent".to_string(),
-                                    LuaValue::String(aura.id.clone()),
-                                );
-                            }
-                        }
-
-                        if self.displays.contains_key(child_id) {
-                            replaced.push(child_id.clone());
-                        } else {
-                            added.push(child_id.clone());
-                        }
-                        self.displays.insert(child_id.clone(), child_value);
-                    }
+            // Insert all prepared children into displays
+            for (child_id, child_value) in &hierarchy.prepared_children {
+                if self.displays.contains_key(child_id) {
+                    replaced.push(child_id.clone());
+                } else {
+                    added.push(child_id.clone());
                 }
+                self.displays.insert(child_id.clone(), child_value.clone());
             }
 
-            // Second pass: set controlledChildren on each group (including subgroups)
-            // based on the parent->children map we built.
-            for (group_id, child_ids) in &children_by_parent {
-                if group_id == &aura.id {
-                    // Will be handled below when we insert the parent
-                    continue;
-                }
-                // Update the subgroup's controlledChildren in the displays map
-                if let Some(group_data) = self.displays.get_mut(group_id) {
-                    if let Some(group_table) = group_data.as_table_mut() {
-                        let controlled_children = LuaValue::Array(
-                            child_ids
-                                .iter()
-                                .map(|id| LuaValue::String(id.clone()))
-                                .collect(),
-                        );
-                        group_table.insert("controlledChildren".to_string(), controlled_children);
-                    }
-                }
-            }
+            // Update subgroups' controlledChildren in the displays map
+            // (build_children_hierarchy already set them on prepared_children,
+            // but we re-inserted those above, so they're already correct)
 
             // Add the main aura (root parent) with its direct controlledChildren
-            let mut parent_data = parent_data;
-            if let Some(direct_children) = children_by_parent.get(&aura.id) {
-                if let Some(parent_table) = parent_data.as_table_mut() {
-                    let controlled_children = LuaValue::Array(
-                        direct_children
-                            .iter()
-                            .map(|id| LuaValue::String(id.clone()))
-                            .collect(),
-                    );
-                    parent_table.insert("controlledChildren".to_string(), controlled_children);
-                }
+            let mut parent_data = aura.data.clone();
+            if let Some(direct_children) = hierarchy.children_by_parent.get(&aura.id) {
+                util::set_controlled_children(&mut parent_data, direct_children);
             }
 
             if self.displays.contains_key(&aura.id) {
@@ -269,80 +204,16 @@ impl SavedVariablesManager {
         let mut result = ConflictDetectionResult::default();
 
         for aura in auras {
-            // Build parent->children map from child_data's existing parent fields
-            let mut children_by_parent: HashMap<String, Vec<String>> = HashMap::new();
-
-            // Also build a map of child_id -> prepared child data (with controlledChildren set)
-            let mut prepared_children: HashMap<String, LuaValue> = HashMap::new();
-
-            for child_data in &aura.child_data {
-                if let Some(child_table) = child_data.as_table() {
-                    if let Some(LuaValue::String(child_id)) = child_table.get("id") {
-                        let parent_id = child_table
-                            .get("parent")
-                            .and_then(|v| {
-                                if let LuaValue::String(s) = v {
-                                    Some(s.clone())
-                                } else {
-                                    None
-                                }
-                            })
-                            .unwrap_or_else(|| aura.id.clone());
-
-                        children_by_parent
-                            .entry(parent_id)
-                            .or_default()
-                            .push(child_id.clone());
-
-                        // Keep the child data as-is (preserving parent field)
-                        let mut child_value = child_data.clone();
-                        if let Some(child_table_mut) = child_value.as_table_mut() {
-                            if !child_table_mut.contains_key("parent") {
-                                child_table_mut.insert(
-                                    "parent".to_string(),
-                                    LuaValue::String(aura.id.clone()),
-                                );
-                            }
-                        }
-                        prepared_children.insert(child_id.clone(), child_value);
-                    }
-                }
-            }
-
-            // Set controlledChildren on subgroups
-            for (group_id, child_ids) in &children_by_parent {
-                if group_id == &aura.id {
-                    continue;
-                }
-                if let Some(group_data) = prepared_children.get_mut(group_id) {
-                    if let Some(group_table) = group_data.as_table_mut() {
-                        let controlled_children = LuaValue::Array(
-                            child_ids
-                                .iter()
-                                .map(|id| LuaValue::String(id.clone()))
-                                .collect(),
-                        );
-                        group_table.insert("controlledChildren".to_string(), controlled_children);
-                    }
-                }
-            }
+            let hierarchy = util::build_children_hierarchy(aura);
 
             // Prepare parent data with only direct controlledChildren
             let mut parent_data = aura.data.clone();
-            if let Some(direct_children) = children_by_parent.get(&aura.id) {
-                if let Some(parent_table) = parent_data.as_table_mut() {
-                    let controlled_children = LuaValue::Array(
-                        direct_children
-                            .iter()
-                            .map(|id| LuaValue::String(id.clone()))
-                            .collect(),
-                    );
-                    parent_table.insert("controlledChildren".to_string(), controlled_children);
-                }
+            if let Some(direct_children) = hierarchy.children_by_parent.get(&aura.id) {
+                util::set_controlled_children(&mut parent_data, direct_children);
             }
 
             // Check main aura
-            let total_child_count = prepared_children.len();
+            let total_child_count = hierarchy.prepared_children.len();
             if let Some(existing) = self.displays.get(&aura.id) {
                 let conflict = ImportConflict::new(
                     aura.id.clone(),
@@ -359,10 +230,13 @@ impl SavedVariablesManager {
             }
 
             // Check child auras
-            for (child_id, child_value) in &prepared_children {
-                let is_subgroup = children_by_parent.contains_key(child_id);
+            for (child_id, child_value) in &hierarchy.prepared_children {
+                let is_subgroup = hierarchy.children_by_parent.contains_key(child_id);
                 let subgroup_child_count = if is_subgroup {
-                    children_by_parent.get(child_id).map_or(0, |v| v.len())
+                    hierarchy
+                        .children_by_parent
+                        .get(child_id)
+                        .map_or(0, |v| v.len())
                 } else {
                     0
                 };
@@ -584,7 +458,7 @@ impl SavedVariablesManager {
         other_keys.sort();
         for key in other_keys {
             let value = &self.other_fields[key];
-            let escaped_key = Self::escape_lua_string(key);
+            let escaped_key = util::escape_lua_string(key);
             output.push_str(&format!(
                 "\t[\"{}\"] = {},\n",
                 escaped_key,
@@ -599,7 +473,7 @@ impl SavedVariablesManager {
         for id in display_keys {
             let data = &self.displays[id];
             // Escape special characters in the ID
-            let escaped_id = Self::escape_lua_string(id);
+            let escaped_id = util::escape_lua_string(id);
             output.push_str(&format!(
                 "\t\t[\"{}\"] = {},\n",
                 escaped_id,
@@ -610,15 +484,6 @@ impl SavedVariablesManager {
 
         output.push_str("}\n");
         output
-    }
-
-    /// Escape special characters in Lua strings
-    fn escape_lua_string(s: &str) -> String {
-        s.replace('\\', "\\\\")
-            .replace('"', "\\\"")
-            .replace('\n', "\\n")
-            .replace('\r', "\\r")
-            .replace('\t', "\\t")
     }
 }
 

@@ -7,6 +7,7 @@
 
 use crate::decoder::LuaValue;
 use crate::error::{Result, WeakAuraError};
+use crate::util;
 use std::collections::HashMap;
 
 /// Represents the parsed WeakAuras SavedVariables
@@ -90,7 +91,7 @@ impl LuaParser {
                     format!("{}", n)
                 }
             }
-            LuaValue::String(s) => format!("\"{}\"", Self::escape_lua_string(s)),
+            LuaValue::String(s) => format!("\"{}\"", util::escape_lua_string(s)),
             LuaValue::Array(arr) => {
                 let mut result = String::from("{\n");
                 for (i, v) in arr.iter().enumerate() {
@@ -111,7 +112,7 @@ impl LuaParser {
                 for key in keys {
                     let value = &table[key];
                     // All keys in WeakAuras SavedVariables use ["key"] format
-                    let key_str = format!("[\"{}\"]", Self::escape_lua_string(key));
+                    let key_str = format!("[\"{}\"]", util::escape_lua_string(key));
                     result.push_str(&format!(
                         "{}\t{} = {},\n",
                         indent_str,
@@ -141,7 +142,7 @@ impl LuaParser {
                 keys.sort();
                 for key in keys {
                     let value = &hash[key];
-                    let key_str = format!("[\"{}\"]", Self::escape_lua_string(key));
+                    let key_str = format!("[\"{}\"]", util::escape_lua_string(key));
                     result.push_str(&format!(
                         "{}\t{} = {},\n",
                         indent_str,
@@ -154,14 +155,6 @@ impl LuaParser {
                 result
             }
         }
-    }
-
-    fn escape_lua_string(s: &str) -> String {
-        s.replace('\\', "\\\\")
-            .replace('"', "\\\"")
-            .replace('\n', "\\n")
-            .replace('\r', "\\r")
-            .replace('\t', "\\t")
     }
 }
 

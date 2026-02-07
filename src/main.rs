@@ -9,6 +9,7 @@ mod error;
 mod lua_parser;
 mod saved_variables;
 mod theme;
+mod util;
 
 use app::WeakAuraImporter;
 use eframe::egui;
