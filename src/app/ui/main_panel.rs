@@ -1,5 +1,7 @@
 //! Main content panel: input area, aura list, import controls.
 
+use std::cell::Cell;
+
 use crate::theme;
 use eframe::egui;
 
@@ -265,6 +267,7 @@ impl WeakAuraImporter {
                 // Aura List (scrollable) - fills remaining space
                 let available_height = ui.available_height();
                 let available_width = ui.available_width();
+                let remove_index: Cell<Option<usize>> = Cell::new(None);
                 egui::Frame::group(ui.style())
                     .fill(theme::colors::BG_ELEVATED)
                     .stroke(egui::Stroke::new(1.0, theme::colors::BORDER))
@@ -281,6 +284,23 @@ impl WeakAuraImporter {
                                     let is_valid = entry.validation.is_valid;
 
                                     ui.horizontal(|ui| {
+                                        // Remove button
+                                        if ui
+                                            .add(
+                                                egui::Button::new(
+                                                    egui::RichText::new("X")
+                                                        .color(theme::colors::ERROR)
+                                                        .small(),
+                                                )
+                                                .small()
+                                                .frame(false),
+                                            )
+                                            .on_hover_text("Remove from list")
+                                            .clicked()
+                                        {
+                                            remove_index.set(Some(idx));
+                                        }
+
                                         // Checkbox (only if valid)
                                         ui.add_enabled(
                                             is_valid,
@@ -327,6 +347,16 @@ impl WeakAuraImporter {
                                 }
                             });
                     });
+
+                // Handle removal after the UI closures complete
+                if let Some(idx) = remove_index.get() {
+                    self.parsed_auras.remove(idx);
+                    match self.selected_aura_index {
+                        Some(sel) if sel == idx => self.selected_aura_index = None,
+                        Some(sel) if sel > idx => self.selected_aura_index = Some(sel - 1),
+                        _ => {}
+                    }
+                }
             }
         });
     }
