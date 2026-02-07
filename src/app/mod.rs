@@ -128,6 +128,12 @@ impl Default for WeakAuraImporter {
 
 impl eframe::App for WeakAuraImporter {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Process async loading results
+        self.poll_loading();
+        if self.is_loading {
+            ctx.request_repaint();
+        }
+
         theme::configure_theme(ctx);
         self.render_menu_bar(ctx);
         self.render_status_bar(ctx);

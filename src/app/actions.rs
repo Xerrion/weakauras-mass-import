@@ -562,6 +562,70 @@ impl WeakAuraImporter {
         Ok(files)
     }
 
+    /// Poll for loading updates from background tasks.
+    /// Called each frame from `update()`.
+    pub(crate) fn poll_loading(&mut self) {
+        let Some(rx) = &mut self.loading_receiver else {
+            return;
+        };
+
+        // Drain all pending messages
+        loop {
+            match rx.try_recv() {
+                Ok(super::state::LoadingUpdate::Progress {
+                    current,
+                    total,
+                    message,
+                }) => {
+                    if total > 0 {
+                        self.loading_progress = current as f32 / total as f32;
+                    }
+                    self.loading_message = message;
+                }
+                Ok(super::state::LoadingUpdate::Complete {
+                    entries,
+                    added,
+                    duplicates,
+                    invalid,
+                }) => {
+                    self.parsed_auras.extend(entries);
+                    self.is_loading = false;
+                    self.loading_receiver = None;
+                    self.loading_progress = 1.0;
+                    self.loading_message.clear();
+
+                    let mut parts = Vec::new();
+                    parts.push(format!("{} added", added));
+                    if duplicates > 0 {
+                        parts.push(format!("{} duplicates skipped", duplicates));
+                    }
+                    if invalid > 0 {
+                        parts.push(format!("{} invalid", invalid));
+                    }
+                    self.set_status(&format!("Loaded: {}", parts.join(", ")));
+                    return; // Receiver was taken, stop loop
+                }
+                Ok(super::state::LoadingUpdate::Error(msg)) => {
+                    self.is_loading = false;
+                    self.loading_receiver = None;
+                    self.loading_progress = 0.0;
+                    self.loading_message.clear();
+                    self.set_error(&msg);
+                    return; // Receiver was taken, stop loop
+                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                    // Sender dropped without sending Complete/Error
+                    self.is_loading = false;
+                    self.loading_receiver = None;
+                    self.loading_progress = 0.0;
+                    self.loading_message.clear();
+                    return;
+                }
+            }
+        }
+    }
+
     pub(crate) fn set_status(&mut self, msg: &str) {
         self.status_message = msg.to_string();
         self.status_is_error = false;
