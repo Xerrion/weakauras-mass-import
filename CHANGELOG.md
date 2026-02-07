@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0](https://github.com/Xerrion/weakauras-mass-import/compare/weakauras-mass-import-v2.0.0...weakauras-mass-import-v3.0.0) (2026-02-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* Complete rewrite of GUI layer from egui/eframe to iced-rs
+
+### Features
+
+* add toast notifications and setup wizard ([1ad3c64](https://github.com/Xerrion/weakauras-mass-import/commit/1ad3c64f3f225bb4a127b93023cc51c49effb84b))
+* migrate GUI framework from egui to iced 0.14 ([1828f48](https://github.com/Xerrion/weakauras-mass-import/commit/1828f48689dd44905b373441a1aae8a36edf4d24))
+* modernize UI with comprehensive design system ([dd3deed](https://github.com/Xerrion/weakauras-mass-import/commit/dd3deeddfc5164d62bdaf249c586296c29b10d8c))
+
+
+### Bug Fixes
+
+* status bar shows only import progress and updates dynamically ([d688b4c](https://github.com/Xerrion/weakauras-mass-import/commit/d688b4c9e4c727efa09a2835b8e4272d6db1592e))
+
+
+### Code Refactoring
+
+* split actions.rs into focused submodules ([6b7252f](https://github.com/Xerrion/weakauras-mass-import/commit/6b7252ff90967c38e5a16367e239c3d3ab091bbb))
+
 ## [2.0.0](https://github.com/Xerrion/weakauras-mass-import/compare/weakauras-mass-import-v1.0.0...weakauras-mass-import-v2.0.0) (2026-02-07)
 
 
