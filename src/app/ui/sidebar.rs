@@ -20,7 +20,7 @@ impl WeakAuraImporter {
             text("Existing Auras")
                 .size(typography::HEADING)
                 .color(colors::GOLD),
-            text(format!("({})", self.existing_auras_count))
+            text(format!("({})", self.saved_vars.auras_count))
                 .size(typography::BODY)
                 .color(colors::TEXT_MUTED),
         ]
@@ -30,7 +30,7 @@ impl WeakAuraImporter {
         content = content.push(header_row);
 
         // Existing auras tree
-        if !self.existing_auras_tree.is_empty() && !self.is_scanning {
+        if !self.saved_vars.auras_tree.is_empty() && !self.tasks.is_scanning {
             // All controls in a single row
             let mut controls_row = row![
                 button(text("Expand").size(typography::CAPTION))
@@ -48,8 +48,8 @@ impl WeakAuraImporter {
             ]
             .spacing(spacing::XS);
 
-            if !self.selected_for_removal.is_empty() {
-                let count = self.selected_for_removal.len();
+            if !self.removal.selected_ids.is_empty() {
+                let count = self.removal.selected_ids.len();
                 controls_row = controls_row.push(
                     button(text(format!("Remove ({})", count)).size(typography::CAPTION))
                         .style(theme::button_danger)
@@ -73,7 +73,7 @@ impl WeakAuraImporter {
             .height(Length::Fill);
 
             content = content.push(tree_container);
-        } else if self.is_scanning {
+        } else if self.tasks.is_scanning {
             content = content.push(
                 text("Loading...")
                     .size(typography::BODY)
@@ -88,7 +88,7 @@ impl WeakAuraImporter {
         }
 
         // Import result
-        if let Some(result) = &self.last_import_result {
+        if let Some(result) = &self.status.last_import_result {
             content = content.push(
                 container(
                     column![
@@ -108,7 +108,7 @@ impl WeakAuraImporter {
         }
 
         container(content)
-            .width(Length::Fixed(self.sidebar_width))
+            .width(Length::Fixed(self.sidebar.width))
             .height(Length::Fill)
             .style(theme::container_elevated)
             .into()
@@ -117,7 +117,7 @@ impl WeakAuraImporter {
     fn render_aura_tree(&self) -> Column<'_, Message> {
         let mut tree_col = Column::new().spacing(2).width(Length::Fill);
 
-        for node in &self.existing_auras_tree {
+        for node in &self.saved_vars.auras_tree {
             tree_col = self.render_aura_tree_node(tree_col, node, 0);
         }
 
@@ -132,7 +132,7 @@ impl WeakAuraImporter {
     ) -> Column<'a, Message> {
         let indent = depth as u16 * 12;
 
-        let is_selected = self.selected_for_removal.contains(&node.id);
+        let is_selected = self.removal.selected_ids.contains(&node.id);
 
         // Checkbox for removal selection
         let node_id = node.id.clone();
@@ -147,7 +147,7 @@ impl WeakAuraImporter {
         node_row = node_row.push(checkbox_btn);
 
         if node.is_group {
-            let is_expanded = self.expanded_groups.contains(&node.id);
+            let is_expanded = self.sidebar.expanded_groups.contains(&node.id);
             let expand_icon = if is_expanded { "▼" } else { "▶" };
 
             let expand_btn = button(text(expand_icon).size(typography::CAPTION))
@@ -173,7 +173,7 @@ impl WeakAuraImporter {
         col = col.push(node_row);
 
         // Render children if expanded
-        if node.is_group && self.expanded_groups.contains(&node.id) {
+        if node.is_group && self.sidebar.expanded_groups.contains(&node.id) {
             for child in &node.children {
                 col = self.render_aura_tree_node(col, child, depth + 1);
             }

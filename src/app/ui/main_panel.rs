@@ -21,7 +21,7 @@ impl WeakAuraImporter {
         );
 
         // Action Buttons row
-        let paste_btn = if self.show_paste_input {
+        let paste_btn = if self.ui.show_paste_input {
             button(text("Paste").size(typography::BODY).color(colors::BG_VOID))
                 .style(theme::button_primary)
                 .on_press(Message::TogglePasteInput)
@@ -31,7 +31,7 @@ impl WeakAuraImporter {
                 .on_press(Message::TogglePasteInput)
         };
 
-        let load_file_btn = if self.is_loading {
+        let load_file_btn = if self.tasks.is_loading {
             button(text("Load file").size(typography::BODY)).style(theme::button_secondary)
         } else {
             button(text("Load file").size(typography::BODY))
@@ -39,7 +39,7 @@ impl WeakAuraImporter {
                 .on_press(Message::LoadFromFile)
         };
 
-        let load_folder_btn = if self.is_loading {
+        let load_folder_btn = if self.tasks.is_loading {
             button(text("Load folder").size(typography::BODY)).style(theme::button_secondary)
         } else {
             button(text("Load folder").size(typography::BODY))
@@ -58,22 +58,20 @@ impl WeakAuraImporter {
         );
 
         // Loading progress bar (shown during async file/folder loading)
-        if self.is_loading {
+        if self.tasks.is_loading {
             use iced::Border;
 
-            let bar = container(
-                progress_bar(0.0..=1.0, self.loading_progress).style(|_theme| {
-                    progress_bar::Style {
-                        background: colors::BG_SURFACE.into(),
-                        bar: colors::GOLD.into(),
-                        border: Border::default().rounded(4.0),
-                    }
-                }),
-            )
+            let bar = container(progress_bar(0.0..=1.0, self.tasks.loading_progress).style(
+                |_theme| progress_bar::Style {
+                    background: colors::BG_SURFACE.into(),
+                    bar: colors::GOLD.into(),
+                    border: Border::default().rounded(4.0),
+                },
+            ))
             .height(8.0);
 
-            let msg = if !self.loading_message.is_empty() {
-                text(&self.loading_message)
+            let msg = if !self.tasks.loading_message.is_empty() {
+                text(&self.tasks.loading_message)
                     .size(typography::CAPTION)
                     .color(colors::TEXT_SECONDARY)
             } else {
@@ -84,7 +82,7 @@ impl WeakAuraImporter {
         }
 
         // Paste input area (only shown when toggled)
-        if self.show_paste_input {
+        if self.ui.show_paste_input {
             content = content.push(self.render_paste_input_area());
         }
 
@@ -156,16 +154,16 @@ impl WeakAuraImporter {
         );
 
         // Check if we can import
-        let can_import = self.selected_sv_path.is_some()
+        let can_import = self.saved_vars.selected_path.is_some()
             && self
                 .parsed_auras
                 .iter()
                 .any(|e| e.selected && e.validation.is_valid)
-            && !self.is_importing
-            && !self.is_loading;
+            && !self.tasks.is_importing
+            && !self.tasks.is_loading;
 
         // Selection Controls, Import Button & Stats
-        let select_all_btn = if self.is_importing {
+        let select_all_btn = if self.tasks.is_importing {
             button(text("Select All").size(typography::BODY)).style(theme::button_secondary)
         } else {
             button(text("Select All").size(typography::BODY))
@@ -173,7 +171,7 @@ impl WeakAuraImporter {
                 .on_press(Message::SelectAllAuras)
         };
 
-        let deselect_all_btn = if self.is_importing {
+        let deselect_all_btn = if self.tasks.is_importing {
             button(text("Deselect All").size(typography::BODY)).style(theme::button_secondary)
         } else {
             button(text("Deselect All").size(typography::BODY))
@@ -183,13 +181,15 @@ impl WeakAuraImporter {
 
         // Remove Selected button
         let has_selected = self.parsed_auras.iter().any(|e| e.selected);
-        let remove_selected_btn = if has_selected && !self.is_importing && !self.is_loading {
-            button(text("Remove Selected").size(typography::BODY))
-                .style(theme::button_secondary)
-                .on_press(Message::RemoveSelectedFromList)
-        } else {
-            button(text("Remove Selected").size(typography::BODY)).style(theme::button_secondary)
-        };
+        let remove_selected_btn =
+            if has_selected && !self.tasks.is_importing && !self.tasks.is_loading {
+                button(text("Remove Selected").size(typography::BODY))
+                    .style(theme::button_secondary)
+                    .on_press(Message::RemoveSelectedFromList)
+            } else {
+                button(text("Remove Selected").size(typography::BODY))
+                    .style(theme::button_secondary)
+            };
 
         // Import button
         let import_btn = if can_import {
@@ -224,69 +224,69 @@ impl WeakAuraImporter {
             self.parsed_auras.len()
         );
 
-        let controls_row = if !can_import && self.selected_sv_path.is_none() && !self.is_importing {
-            row![
-                button(text("Select All").size(typography::BODY))
-                    .style(theme::button_secondary)
-                    .on_press(Message::SelectAllAuras),
-                button(text("Deselect All").size(typography::BODY))
-                    .style(theme::button_secondary)
-                    .on_press(Message::DeselectAllAuras),
-                button(text("Remove Selected").size(typography::BODY))
+        let controls_row =
+            if !can_import && self.saved_vars.selected_path.is_none() && !self.tasks.is_importing {
+                row![
+                    button(text("Select All").size(typography::BODY))
+                        .style(theme::button_secondary)
+                        .on_press(Message::SelectAllAuras),
+                    button(text("Deselect All").size(typography::BODY))
+                        .style(theme::button_secondary)
+                        .on_press(Message::DeselectAllAuras),
+                    button(text("Remove Selected").size(typography::BODY))
+                        .style(theme::button_secondary),
+                    button(
+                        text("Import Selected >>")
+                            .size(typography::BODY)
+                            .color(colors::TEXT_MUTED)
+                    )
                     .style(theme::button_secondary),
-                button(
-                    text("Import Selected >>")
+                    text("Select a SavedVariables file first")
                         .size(typography::BODY)
-                        .color(colors::TEXT_MUTED)
-                )
-                .style(theme::button_secondary),
-                text("Select a SavedVariables file first")
-                    .size(typography::BODY)
-                    .color(colors::TEXT_MUTED),
-                space::horizontal(),
-                text(stats_format)
-                    .size(typography::CAPTION)
-                    .color(colors::TEXT_SECONDARY)
-            ]
-            .spacing(spacing::SM)
-            .align_y(iced::Alignment::Center)
-        } else {
-            row![
-                select_all_btn,
-                deselect_all_btn,
-                remove_selected_btn,
-                import_btn,
-                space::horizontal(),
-                text(stats_format)
-                    .size(typography::CAPTION)
-                    .color(colors::TEXT_SECONDARY)
-            ]
-            .spacing(spacing::SM)
-            .align_y(iced::Alignment::Center)
-        };
+                        .color(colors::TEXT_MUTED),
+                    space::horizontal(),
+                    text(stats_format)
+                        .size(typography::CAPTION)
+                        .color(colors::TEXT_SECONDARY)
+                ]
+                .spacing(spacing::SM)
+                .align_y(iced::Alignment::Center)
+            } else {
+                row![
+                    select_all_btn,
+                    deselect_all_btn,
+                    remove_selected_btn,
+                    import_btn,
+                    space::horizontal(),
+                    text(stats_format)
+                        .size(typography::CAPTION)
+                        .color(colors::TEXT_SECONDARY)
+                ]
+                .spacing(spacing::SM)
+                .align_y(iced::Alignment::Center)
+            };
 
         content = content.push(controls_row);
 
         // Progress bar (shown during import)
-        if self.is_importing {
+        if self.tasks.is_importing {
             use iced::widget::progress_bar;
             use iced::Border;
 
-            content = content.push(
-                container(
-                    progress_bar(0.0..=1.0, self.import_progress).style(|_theme| {
-                        progress_bar::Style {
+            content =
+                content.push(
+                    container(progress_bar(0.0..=1.0, self.tasks.import_progress).style(
+                        |_theme| progress_bar::Style {
                             background: colors::BG_SURFACE.into(),
                             bar: colors::GOLD.into(),
                             border: Border::default().rounded(4.0),
-                        }
-                    }),
-                )
-                .height(Length::Fixed(8.0)),
-            );
-            if !self.import_progress_message.is_empty() {
+                        },
+                    ))
+                    .height(Length::Fixed(8.0)),
+                );
+            if !self.tasks.import_message.is_empty() {
                 content = content.push(
-                    text(&self.import_progress_message)
+                    text(&self.tasks.import_message)
                         .size(typography::CAPTION)
                         .color(colors::TEXT_SECONDARY),
                 );
@@ -322,7 +322,7 @@ impl WeakAuraImporter {
             let name = entry.validation.summary();
             // Dark text only when selected AND JSON view is visible (button has primary bg)
             let name_color = if is_valid {
-                if is_selected_for_view && self.show_decoded_view {
+                if is_selected_for_view && self.ui.show_decoded_view {
                     colors::BG_VOID
                 } else {
                     colors::TEXT_PRIMARY
@@ -334,7 +334,7 @@ impl WeakAuraImporter {
             // Always use a button wrapper for consistent padding/spacing
             // regardless of whether JSON view is active
             let label_btn = button(text(name).size(typography::BODY).color(name_color)).style(
-                if is_selected_for_view && self.show_decoded_view {
+                if is_selected_for_view && self.ui.show_decoded_view {
                     theme::button_primary
                 } else {
                     theme::button_frameless
@@ -342,7 +342,7 @@ impl WeakAuraImporter {
             );
 
             // Only make clickable when JSON panel is visible and aura is valid
-            let label_btn = if self.show_decoded_view && is_valid {
+            let label_btn = if self.ui.show_decoded_view && is_valid {
                 label_btn.on_press(Message::SelectAuraForPreview(idx))
             } else {
                 label_btn

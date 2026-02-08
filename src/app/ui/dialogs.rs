@@ -25,7 +25,7 @@ impl WeakAuraImporter {
                 .color(colors::GOLD),
         );
 
-        let wow_path_input = text_input("WoW Path...", &self.wow_path)
+        let wow_path_input = text_input("WoW Path...", &self.saved_vars.wow_path)
             .on_input(Message::WowPathChanged)
             .style(theme::text_input_style);
 
@@ -49,14 +49,14 @@ impl WeakAuraImporter {
                 .color(colors::TEXT_PRIMARY),
         );
 
-        let files_list = if self.discovered_sv_files.is_empty() {
+        let files_list = if self.saved_vars.discovered_files.is_empty() {
             column![text("No SavedVariables found")
                 .size(typography::BODY)
                 .color(colors::TEXT_MUTED)]
         } else {
             let mut files_col = Column::new().spacing(spacing::XS);
-            for sv_info in &self.discovered_sv_files {
-                let is_selected = self.selected_sv_path.as_ref() == Some(&sv_info.path);
+            for sv_info in &self.saved_vars.discovered_files {
+                let is_selected = self.saved_vars.selected_path.as_ref() == Some(&sv_info.path);
                 let label_text = format!("{} ({})", sv_info.account, sv_info.pretty_flavor());
                 let path_clone = sv_info.path.clone();
 
@@ -97,13 +97,13 @@ impl WeakAuraImporter {
                 .on_press(Message::SelectSavedVariablesManually),
         );
 
-        if self.is_scanning {
+        if self.tasks.is_scanning {
             content = content.push(
                 row![
                     text("Loading...")
                         .size(typography::BODY)
                         .color(colors::TEXT_SECONDARY),
-                    text(&self.scanning_message)
+                    text(&self.tasks.scanning_message)
                         .size(typography::CAPTION)
                         .color(colors::TEXT_MUTED),
                 ]
@@ -111,7 +111,7 @@ impl WeakAuraImporter {
             );
         }
 
-        let can_continue = self.selected_sv_path.is_some();
+        let can_continue = self.saved_vars.selected_path.is_some();
 
         let cancel_btn = if can_continue {
             button(text("Cancel").size(typography::BODY))
@@ -171,7 +171,7 @@ impl WeakAuraImporter {
             .filter(|e| e.selected && e.validation.is_valid)
             .count();
 
-        let target_text = if let Some(path) = &self.selected_sv_path {
+        let target_text = if let Some(path) = &self.saved_vars.selected_path {
             format!(
                 "Target: {}",
                 path.file_name().unwrap_or_default().to_string_lossy()
@@ -232,7 +232,7 @@ impl WeakAuraImporter {
         &'a self,
         underlay: Element<'a, Message>,
     ) -> Element<'a, Message> {
-        let (new_count, conflict_count, conflicts) = match &self.conflict_result {
+        let (new_count, conflict_count, conflicts) = match &self.conflicts.result {
             Some(cr) => (cr.new_auras.len(), cr.conflicts.len(), cr.conflicts.clone()),
             None => {
                 return underlay;
@@ -344,41 +344,70 @@ impl WeakAuraImporter {
 
         // Row 1: Name, Display, Trigger, Load
         let row1 = row![
-            checkbox(self.global_categories.contains(&UpdateCategory::Name))
-                .label("Name")
-                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Name))
-                .text_size(typography::CAPTION),
-            checkbox(self.global_categories.contains(&UpdateCategory::Display))
-                .label("Display")
-                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Display))
-                .text_size(typography::CAPTION),
-            checkbox(self.global_categories.contains(&UpdateCategory::Trigger))
-                .label("Trigger")
-                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Trigger))
-                .text_size(typography::CAPTION),
-            checkbox(self.global_categories.contains(&UpdateCategory::Load))
-                .label("Load")
-                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Load))
-                .text_size(typography::CAPTION),
+            checkbox(
+                self.conflicts
+                    .global_categories
+                    .contains(&UpdateCategory::Name)
+            )
+            .label("Name")
+            .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Name))
+            .text_size(typography::CAPTION),
+            checkbox(
+                self.conflicts
+                    .global_categories
+                    .contains(&UpdateCategory::Display)
+            )
+            .label("Display")
+            .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Display))
+            .text_size(typography::CAPTION),
+            checkbox(
+                self.conflicts
+                    .global_categories
+                    .contains(&UpdateCategory::Trigger)
+            )
+            .label("Trigger")
+            .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Trigger))
+            .text_size(typography::CAPTION),
+            checkbox(
+                self.conflicts
+                    .global_categories
+                    .contains(&UpdateCategory::Load)
+            )
+            .label("Load")
+            .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Load))
+            .text_size(typography::CAPTION),
         ]
         .spacing(spacing::MD);
 
         // Row 2: Action, Animation, Conditions, Author Options
         let row2 = row![
-            checkbox(self.global_categories.contains(&UpdateCategory::Action))
-                .label("Actions")
-                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Action))
-                .text_size(typography::CAPTION),
-            checkbox(self.global_categories.contains(&UpdateCategory::Animation))
-                .label("Animations")
-                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Animation))
-                .text_size(typography::CAPTION),
-            checkbox(self.global_categories.contains(&UpdateCategory::Conditions))
-                .label("Conditions")
-                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Conditions))
-                .text_size(typography::CAPTION),
             checkbox(
-                self.global_categories
+                self.conflicts
+                    .global_categories
+                    .contains(&UpdateCategory::Action)
+            )
+            .label("Actions")
+            .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Action))
+            .text_size(typography::CAPTION),
+            checkbox(
+                self.conflicts
+                    .global_categories
+                    .contains(&UpdateCategory::Animation)
+            )
+            .label("Animations")
+            .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Animation))
+            .text_size(typography::CAPTION),
+            checkbox(
+                self.conflicts
+                    .global_categories
+                    .contains(&UpdateCategory::Conditions)
+            )
+            .label("Conditions")
+            .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Conditions))
+            .text_size(typography::CAPTION),
+            checkbox(
+                self.conflicts
+                    .global_categories
                     .contains(&UpdateCategory::AuthorOptions)
             )
             .label("Author Options")
@@ -390,24 +419,37 @@ impl WeakAuraImporter {
         // Row 3: Arrangement, Anchor, User Config, Metadata
         let row3 = row![
             checkbox(
-                self.global_categories
+                self.conflicts
+                    .global_categories
                     .contains(&UpdateCategory::Arrangement)
             )
             .label("Arrangement")
             .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Arrangement))
             .text_size(typography::CAPTION),
-            checkbox(self.global_categories.contains(&UpdateCategory::Anchor))
-                .label("Anchor")
-                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Anchor))
-                .text_size(typography::CAPTION),
-            checkbox(self.global_categories.contains(&UpdateCategory::UserConfig))
-                .label("User Config")
-                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::UserConfig))
-                .text_size(typography::CAPTION),
-            checkbox(self.global_categories.contains(&UpdateCategory::Metadata))
-                .label("Metadata")
-                .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Metadata))
-                .text_size(typography::CAPTION),
+            checkbox(
+                self.conflicts
+                    .global_categories
+                    .contains(&UpdateCategory::Anchor)
+            )
+            .label("Anchor")
+            .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Anchor))
+            .text_size(typography::CAPTION),
+            checkbox(
+                self.conflicts
+                    .global_categories
+                    .contains(&UpdateCategory::UserConfig)
+            )
+            .label("User Config")
+            .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::UserConfig))
+            .text_size(typography::CAPTION),
+            checkbox(
+                self.conflicts
+                    .global_categories
+                    .contains(&UpdateCategory::Metadata)
+            )
+            .label("Metadata")
+            .on_toggle(|_| Message::ToggleGlobalCategory(UpdateCategory::Metadata))
+            .text_size(typography::CAPTION),
         ]
         .spacing(spacing::MD);
 
@@ -422,7 +464,7 @@ impl WeakAuraImporter {
         let mut list_col = Column::new().spacing(spacing::SM);
 
         for (idx, conflict) in conflicts.iter().enumerate() {
-            let resolution = &self.conflict_resolutions[idx];
+            let resolution = &self.conflicts.resolutions[idx];
 
             // Action dropdown using pick_list
             let action_options = vec![
@@ -610,11 +652,11 @@ impl WeakAuraImporter {
         &'a self,
         underlay: Element<'a, Message>,
     ) -> Element<'a, Message> {
-        let count = self.pending_removal_ids.len();
+        let count = self.removal.pending_ids.len();
 
         // List of IDs to be removed
         let mut id_list = Column::new().spacing(spacing::XS);
-        for id in &self.pending_removal_ids {
+        for id in &self.removal.pending_ids {
             id_list = id_list.push(
                 text(id)
                     .size(typography::BODY)
