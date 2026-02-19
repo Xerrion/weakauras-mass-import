@@ -1,25 +1,26 @@
 //! Main GUI application for WeakAura Mass Import using iced.
 
 mod actions;
+mod message;
 mod state;
 mod ui;
 
+pub use message::Message;
+
 use std::collections::HashSet;
-use std::path::PathBuf;
 
 use arboard::Clipboard;
 use iced::widget::{column, container, row, text};
 use iced::{Element, Length, Task, Theme};
-use iced_toasts::{toast_container, ToastContainer, ToastId};
+use iced_toasts::{toast_container, ToastContainer};
 
-use crate::categories::UpdateCategory;
-use crate::saved_variables::{
-    AuraTreeNode, ConflictAction, ConflictDetectionResult, ImportResult, SavedVariablesInfo,
-};
+use crate::saved_variables::{AuraTreeNode, ConflictAction};
 use crate::theme as app_theme;
 
-pub use state::{
-    ConflictResolutionUI, ImportUpdate, LoadingUpdate, ParsedAuraEntry, RemovalUpdate, ScanUpdate,
+pub use state::{ConflictResolutionUI, ParsedAuraEntry};
+use state::{
+    ConflictState, RemovalState, SavedVariablesState, SidebarState, StatusState, TaskProgress,
+    UiVisibility,
 };
 
 /// Main application state
@@ -28,165 +29,26 @@ pub struct WeakAuraImporter {
     pub(crate) input_text: String,
     /// Parsed auras from input
     pub(crate) parsed_auras: Vec<ParsedAuraEntry>,
-    /// Selected SavedVariables file
-    pub(crate) selected_sv_path: Option<PathBuf>,
-    /// Discovered SavedVariables files
-    pub(crate) discovered_sv_files: Vec<SavedVariablesInfo>,
-    /// Status message
-    pub(crate) status_message: String,
-    /// Status is error
-    pub(crate) status_is_error: bool,
-    /// Import result
-    pub(crate) last_import_result: Option<ImportResult>,
-    /// Show decoded view
-    pub(crate) show_decoded_view: bool,
     /// Selected aura index for preview
     pub(crate) selected_aura_index: Option<usize>,
-    /// Show import confirmation dialog
-    pub(crate) show_import_confirm: bool,
-    /// WoW path for scanning
-    pub(crate) wow_path: String,
     /// Clipboard handler
     pub(crate) clipboard: Option<Clipboard>,
-    /// Show paste input area
-    pub(crate) show_paste_input: bool,
-    /// Loaded existing auras as tree
-    pub(crate) existing_auras_tree: Vec<AuraTreeNode>,
-    /// Total count of existing auras
-    pub(crate) existing_auras_count: usize,
-    /// Show conflict resolution dialog
-    pub(crate) show_conflict_dialog: bool,
-    /// Current conflict detection result
-    pub(crate) conflict_result: Option<ConflictDetectionResult>,
-    /// Resolutions for each conflict (parallel to conflict_result.conflicts)
-    pub(crate) conflict_resolutions: Vec<ConflictResolutionUI>,
-    /// Global categories to update (used as default for all conflicts)
-    pub(crate) global_categories: HashSet<UpdateCategory>,
-    /// Selected conflict index in the dialog
-    pub(crate) selected_conflict_index: Option<usize>,
-    /// Expanded groups in the existing auras tree
-    pub(crate) expanded_groups: HashSet<String>,
-    /// Import progress (0.0 to 1.0)
-    pub(crate) import_progress: f32,
-    /// Is import currently in progress
-    pub(crate) is_importing: bool,
-    /// Import progress message
-    pub(crate) import_progress_message: String,
-    /// Auras selected for removal in the sidebar
-    pub(crate) selected_for_removal: HashSet<String>,
-    /// Show removal confirmation dialog
-    pub(crate) show_remove_confirm: bool,
-    /// IDs pending removal (populated when confirm dialog opens)
-    pub(crate) pending_removal_ids: Vec<String>,
-    /// Whether a background loading task is in progress
-    pub(crate) is_loading: bool,
-    /// Loading progress (0.0 to 1.0)
-    pub(crate) loading_progress: f32,
-    /// Loading progress message
-    pub(crate) loading_message: String,
-    /// Whether a background scanning task (loading SavedVariables) is in progress
-    pub(crate) is_scanning: bool,
-    /// Scanning progress message
-    pub(crate) scanning_message: String,
-    /// Whether a background removal task is in progress
-    pub(crate) is_removing: bool,
-    /// Removal progress message
-    pub(crate) removal_message: String,
-    /// Show setup wizard for selecting SavedVariables
-    pub(crate) show_setup_wizard: bool,
-    /// Sidebar width in pixels
-    pub(crate) sidebar_width: f32,
-    /// Whether sidebar is being resized
-    pub(crate) is_resizing_sidebar: bool,
-    /// Whether mouse is hovering over resize edge
-    pub(crate) is_hovering_resize: bool,
     /// Toast notification container
     pub(crate) toasts: ToastContainer<'static, Message>,
-}
-
-/// Messages for the iced application
-#[derive(Debug, Clone)]
-pub enum Message {
-    // Input handling
-    InputTextChanged(String),
-    WowPathChanged(String),
-
-    // File operations
-    LoadFromFile,
-    LoadFromFolder,
-    BrowseWowPath,
-    SelectSavedVariablesFile(PathBuf),
-    SelectSavedVariablesManually,
-
-    // Input actions
-    TogglePasteInput,
-    PasteFromClipboard,
-    ParseInput,
-    ClearInput,
-
-    // View actions
-    ToggleDecodedView,
-    SelectAuraForPreview(usize),
-
-    // Selection actions
-    ToggleAuraSelection(usize),
-    SelectAllAuras,
-    DeselectAllAuras,
-    RemoveAuraFromList(usize),
-    RemoveSelectedFromList,
-
-    // Import actions
-    ShowImportConfirm,
-    HideImportConfirm,
-    ConfirmImport,
-
-    // Conflict resolution
-    HideConflictDialog,
-    SetConflictAction(usize, ConflictAction),
-    ToggleConflictExpanded(usize),
-    ToggleGlobalCategory(UpdateCategory),
-    ToggleConflictCategory(usize, UpdateCategory),
-    SetAllConflictsAction(ConflictAction),
-    ConfirmConflictResolutions,
-
-    // Removal actions
-    ToggleAuraForRemoval(String),
-    SelectAllForRemoval,
-    DeselectAllForRemoval,
-    ShowRemoveConfirm,
-    HideRemoveConfirm,
-    ConfirmRemoval,
-
-    // Setup wizard
-    ShowSetupWizard,
-    HideSetupWizard,
-
-    // Tree navigation
-    ToggleGroupExpanded(String),
-    ExpandAllGroups,
-    CollapseAllGroups,
-
-    // Async task results
-    LoadingUpdate(LoadingUpdate),
-    ImportUpdate(ImportUpdate),
-    ScanUpdate(ScanUpdate),
-    RemovalUpdate(RemovalUpdate),
-
-    // File dialog results
-    FileSelected(Option<PathBuf>),
-    FolderSelected(Option<PathBuf>),
-    WowPathSelected(Option<PathBuf>),
-    ManualSvSelected(Option<PathBuf>),
-
-    // Sidebar resize
-    StartSidebarResize,
-    SidebarResize(f32),
-    EndSidebarResize,
-    HoverResizeEdge,
-    UnhoverResizeEdge,
-
-    // Toast notifications
-    DismissToast(ToastId),
+    /// UI visibility state
+    pub(crate) ui: UiVisibility,
+    /// Sidebar state
+    pub(crate) sidebar: SidebarState,
+    /// Task progress state
+    pub(crate) tasks: TaskProgress,
+    /// Conflict resolution state
+    pub(crate) conflicts: ConflictState,
+    /// Aura removal state
+    pub(crate) removal: RemovalState,
+    /// SavedVariables state
+    pub(crate) saved_vars: SavedVariablesState,
+    /// Status bar state
+    pub(crate) status: StatusState,
 }
 
 impl Default for WeakAuraImporter {
@@ -194,43 +56,19 @@ impl Default for WeakAuraImporter {
         Self {
             input_text: String::new(),
             parsed_auras: Vec::new(),
-            selected_sv_path: None,
-            discovered_sv_files: Vec::new(),
-            status_message: String::from("Ready. Load WeakAura strings from file or folder."),
-            status_is_error: false,
-            last_import_result: None,
-            show_decoded_view: false,
             selected_aura_index: None,
-            show_import_confirm: false,
-            wow_path: String::new(),
             clipboard: Clipboard::new().ok(),
-            show_paste_input: false,
-            existing_auras_tree: Vec::new(),
-            existing_auras_count: 0,
-            show_conflict_dialog: false,
-            conflict_result: None,
-            conflict_resolutions: Vec::new(),
-            global_categories: UpdateCategory::defaults(),
-            selected_conflict_index: None,
-            expanded_groups: HashSet::new(),
-            import_progress: 0.0,
-            is_importing: false,
-            import_progress_message: String::new(),
-            selected_for_removal: HashSet::new(),
-            show_remove_confirm: false,
-            pending_removal_ids: Vec::new(),
-            is_loading: false,
-            loading_progress: 0.0,
-            loading_message: String::new(),
-            is_scanning: false,
-            scanning_message: String::new(),
-            is_removing: false,
-            removal_message: String::new(),
-            show_setup_wizard: true,
-            sidebar_width: 350.0,
-            is_resizing_sidebar: false,
-            is_hovering_resize: false,
             toasts: toast_container(Message::DismissToast),
+            ui: UiVisibility {
+                show_setup_wizard: true,
+                ..UiVisibility::default()
+            },
+            sidebar: SidebarState::default(),
+            tasks: TaskProgress::default(),
+            conflicts: ConflictState::default(),
+            removal: RemovalState::default(),
+            saved_vars: SavedVariablesState::default(),
+            status: StatusState::default(),
         }
     }
 }
@@ -243,7 +81,7 @@ impl WeakAuraImporter {
         // Auto-discover WoW installations
         let wow_paths = crate::saved_variables::SavedVariablesManager::find_wow_paths();
         if let Some(first_path) = wow_paths.first() {
-            app.wow_path = first_path.to_string_lossy().to_string();
+            app.saved_vars.wow_path = first_path.to_string_lossy().to_string();
             app.scan_saved_variables_sync();
         }
 
@@ -264,7 +102,7 @@ impl WeakAuraImporter {
                 Task::none()
             }
             Message::WowPathChanged(path) => {
-                self.wow_path = path;
+                self.saved_vars.wow_path = path;
                 self.scan_saved_variables_sync();
                 Task::none()
             }
@@ -282,9 +120,9 @@ impl WeakAuraImporter {
                 Message::WowPathSelected,
             ),
             Message::SelectSavedVariablesFile(path) => {
-                self.selected_sv_path = Some(path);
-                self.selected_for_removal.clear();
-                self.pending_removal_ids.clear();
+                self.saved_vars.selected_path = Some(path);
+                self.removal.selected_ids.clear();
+                self.removal.pending_ids.clear();
                 // Don't load yet - wait for Continue button
                 Task::none()
             }
@@ -316,27 +154,27 @@ impl WeakAuraImporter {
             }
             Message::WowPathSelected(path) => {
                 if let Some(p) = path {
-                    self.wow_path = p.to_string_lossy().to_string();
+                    self.saved_vars.wow_path = p.to_string_lossy().to_string();
                     self.scan_saved_variables_sync();
                 }
                 Task::none()
             }
             Message::ManualSvSelected(path) => {
                 if let Some(p) = path {
-                    self.selected_sv_path = Some(p);
-                    self.selected_for_removal.clear();
-                    self.pending_removal_ids.clear();
+                    self.saved_vars.selected_path = Some(p);
+                    self.removal.selected_ids.clear();
+                    self.removal.pending_ids.clear();
                     return self.load_existing_auras_async();
                 }
                 Task::none()
             }
             Message::ShowSetupWizard => {
-                self.show_setup_wizard = true;
+                self.ui.show_setup_wizard = true;
                 Task::none()
             }
             Message::HideSetupWizard => {
-                if self.selected_sv_path.is_some() {
-                    self.show_setup_wizard = false;
+                if self.saved_vars.selected_path.is_some() {
+                    self.ui.show_setup_wizard = false;
                     // Load the SavedVariables when continuing
                     return self.load_existing_auras_async();
                 }
@@ -345,7 +183,7 @@ impl WeakAuraImporter {
 
             // Input actions
             Message::TogglePasteInput => {
-                self.show_paste_input = !self.show_paste_input;
+                self.ui.show_paste_input = !self.ui.show_paste_input;
                 Task::none()
             }
             Message::PasteFromClipboard => {
@@ -359,13 +197,13 @@ impl WeakAuraImporter {
             Message::ClearInput => {
                 self.input_text.clear();
                 self.parsed_auras.clear();
-                self.show_paste_input = false;
+                self.ui.show_paste_input = false;
                 Task::none()
             }
 
             // View actions
             Message::ToggleDecodedView => {
-                self.show_decoded_view = !self.show_decoded_view;
+                self.ui.show_decoded_view = !self.ui.show_decoded_view;
                 Task::none()
             }
             Message::SelectAuraForPreview(idx) => {
@@ -413,56 +251,56 @@ impl WeakAuraImporter {
 
             // Import actions
             Message::ShowImportConfirm => {
-                self.show_import_confirm = true;
+                self.ui.show_import_confirm = true;
                 Task::none()
             }
             Message::HideImportConfirm => {
-                self.show_import_confirm = false;
+                self.ui.show_import_confirm = false;
                 Task::none()
             }
             Message::ConfirmImport => {
-                self.show_import_confirm = false;
+                self.ui.show_import_confirm = false;
                 self.import_auras_async()
             }
 
             // Conflict resolution
             Message::HideConflictDialog => {
-                self.show_conflict_dialog = false;
-                self.conflict_result = None;
-                self.conflict_resolutions.clear();
+                self.ui.show_conflict_dialog = false;
+                self.conflicts.result = None;
+                self.conflicts.resolutions.clear();
                 Task::none()
             }
             Message::SetConflictAction(idx, action) => {
-                if let Some(res) = self.conflict_resolutions.get_mut(idx) {
+                if let Some(res) = self.conflicts.resolutions.get_mut(idx) {
                     res.action = action;
                     if action == ConflictAction::UpdateSelected {
-                        res.categories = self.global_categories.clone();
+                        res.categories = self.conflicts.global_categories.clone();
                     }
                 }
                 Task::none()
             }
             Message::ToggleConflictExpanded(idx) => {
-                if let Some(res) = self.conflict_resolutions.get_mut(idx) {
+                if let Some(res) = self.conflicts.resolutions.get_mut(idx) {
                     res.expanded = !res.expanded;
                 }
                 Task::none()
             }
             Message::ToggleGlobalCategory(category) => {
-                if self.global_categories.contains(&category) {
-                    self.global_categories.remove(&category);
+                if self.conflicts.global_categories.contains(&category) {
+                    self.conflicts.global_categories.remove(&category);
                 } else {
-                    self.global_categories.insert(category);
+                    self.conflicts.global_categories.insert(category);
                 }
                 // Update all resolutions that use UpdateSelected
-                for res in &mut self.conflict_resolutions {
+                for res in &mut self.conflicts.resolutions {
                     if res.action == ConflictAction::UpdateSelected {
-                        res.categories = self.global_categories.clone();
+                        res.categories = self.conflicts.global_categories.clone();
                     }
                 }
                 Task::none()
             }
             Message::ToggleConflictCategory(idx, category) => {
-                if let Some(res) = self.conflict_resolutions.get_mut(idx) {
+                if let Some(res) = self.conflicts.resolutions.get_mut(idx) {
                     if res.categories.contains(&category) {
                         res.categories.remove(&category);
                     } else {
@@ -472,10 +310,10 @@ impl WeakAuraImporter {
                 Task::none()
             }
             Message::SetAllConflictsAction(action) => {
-                for res in &mut self.conflict_resolutions {
+                for res in &mut self.conflicts.resolutions {
                     res.action = action;
                     if action == ConflictAction::UpdateSelected {
-                        res.categories = self.global_categories.clone();
+                        res.categories = self.conflicts.global_categories.clone();
                     }
                 }
                 Task::none()
@@ -484,10 +322,10 @@ impl WeakAuraImporter {
 
             // Removal actions
             Message::ToggleAuraForRemoval(id) => {
-                if self.selected_for_removal.contains(&id) {
-                    self.selected_for_removal.remove(&id);
+                if self.removal.selected_ids.contains(&id) {
+                    self.removal.selected_ids.remove(&id);
                 } else {
-                    self.selected_for_removal.insert(id);
+                    self.removal.selected_ids.insert(id);
                 }
                 Task::none()
             }
@@ -498,36 +336,36 @@ impl WeakAuraImporter {
                         collect_ids(child, set);
                     }
                 }
-                for node in &self.existing_auras_tree {
-                    collect_ids(node, &mut self.selected_for_removal);
+                for node in &self.saved_vars.auras_tree {
+                    collect_ids(node, &mut self.removal.selected_ids);
                 }
                 Task::none()
             }
             Message::DeselectAllForRemoval => {
-                self.selected_for_removal.clear();
+                self.removal.selected_ids.clear();
                 Task::none()
             }
             Message::ShowRemoveConfirm => {
-                self.pending_removal_ids = self.selected_for_removal.iter().cloned().collect();
-                self.show_remove_confirm = true;
+                self.removal.pending_ids = self.removal.selected_ids.iter().cloned().collect();
+                self.ui.show_remove_confirm = true;
                 Task::none()
             }
             Message::HideRemoveConfirm => {
-                self.show_remove_confirm = false;
-                self.pending_removal_ids.clear();
+                self.ui.show_remove_confirm = false;
+                self.removal.pending_ids.clear();
                 Task::none()
             }
             Message::ConfirmRemoval => {
-                self.show_remove_confirm = false;
+                self.ui.show_remove_confirm = false;
                 self.remove_auras_async()
             }
 
             // Tree navigation
             Message::ToggleGroupExpanded(id) => {
-                if self.expanded_groups.contains(&id) {
-                    self.expanded_groups.remove(&id);
+                if self.sidebar.expanded_groups.contains(&id) {
+                    self.sidebar.expanded_groups.remove(&id);
                 } else {
-                    self.expanded_groups.insert(id);
+                    self.sidebar.expanded_groups.insert(id);
                 }
                 Task::none()
             }
@@ -540,13 +378,13 @@ impl WeakAuraImporter {
                         }
                     }
                 }
-                for node in &self.existing_auras_tree {
-                    collect_groups(node, &mut self.expanded_groups);
+                for node in &self.saved_vars.auras_tree {
+                    collect_groups(node, &mut self.sidebar.expanded_groups);
                 }
                 Task::none()
             }
             Message::CollapseAllGroups => {
-                self.expanded_groups.clear();
+                self.sidebar.expanded_groups.clear();
                 Task::none()
             }
 
@@ -570,28 +408,28 @@ impl WeakAuraImporter {
 
             // Sidebar resize
             Message::StartSidebarResize => {
-                self.is_resizing_sidebar = true;
+                self.sidebar.is_resizing = true;
                 Task::none()
             }
             Message::SidebarResize(x) => {
-                if self.is_resizing_sidebar {
+                if self.sidebar.is_resizing {
                     // Clamp sidebar width between min and max
                     const MIN_WIDTH: f32 = 200.0;
                     const MAX_WIDTH: f32 = 600.0;
-                    self.sidebar_width = x.clamp(MIN_WIDTH, MAX_WIDTH);
+                    self.sidebar.width = x.clamp(MIN_WIDTH, MAX_WIDTH);
                 }
                 Task::none()
             }
             Message::EndSidebarResize => {
-                self.is_resizing_sidebar = false;
+                self.sidebar.is_resizing = false;
                 Task::none()
             }
             Message::HoverResizeEdge => {
-                self.is_hovering_resize = true;
+                self.sidebar.is_hovering_resize = true;
                 Task::none()
             }
             Message::UnhoverResizeEdge => {
-                self.is_hovering_resize = false;
+                self.sidebar.is_hovering_resize = false;
                 Task::none()
             }
 
@@ -629,9 +467,9 @@ impl WeakAuraImporter {
         let main_content = self.render_main_content();
 
         // Resize edge - thin strip on the right of sidebar, visible on hover
-        let resize_color = if self.is_resizing_sidebar {
+        let resize_color = if self.sidebar.is_resizing {
             colors::GOLD
-        } else if self.is_hovering_resize {
+        } else if self.sidebar.is_hovering_resize {
             colors::GOLD_MUTED
         } else {
             iced::Color::TRANSPARENT
@@ -653,7 +491,7 @@ impl WeakAuraImporter {
         .on_exit(Message::UnhoverResizeEdge);
 
         // When resizing, we need to track mouse movement globally
-        let content_row: Element<Message> = if self.show_decoded_view {
+        let content_row: Element<Message> = if self.ui.show_decoded_view {
             let decoded_panel = self.render_decoded_panel();
             row![sidebar, resize_edge, main_content, decoded_panel]
                 .spacing(0)
@@ -667,7 +505,7 @@ impl WeakAuraImporter {
         };
 
         // Wrap content in mouse_area to track resize dragging
-        let content_with_resize: Element<Message> = if self.is_resizing_sidebar {
+        let content_with_resize: Element<Message> = if self.sidebar.is_resizing {
             mouse_area(content_row)
                 .on_move(|point| Message::SidebarResize(point.x))
                 .on_release(Message::EndSidebarResize)
@@ -688,16 +526,16 @@ impl WeakAuraImporter {
         let mut main_view: Element<Message> = column![header, content_container, status_bar].into();
 
         // Modal overlays
-        if self.show_import_confirm {
+        if self.ui.show_import_confirm {
             main_view = self.overlay_import_confirmation(main_view);
         }
-        if self.show_conflict_dialog {
+        if self.ui.show_conflict_dialog {
             main_view = self.overlay_conflict_dialog(main_view);
         }
-        if self.show_remove_confirm {
+        if self.ui.show_remove_confirm {
             main_view = self.overlay_remove_confirmation(main_view);
         }
-        if self.show_setup_wizard || self.selected_sv_path.is_none() {
+        if self.ui.show_setup_wizard || self.saved_vars.selected_path.is_none() {
             main_view = self.overlay_setup_wizard(main_view);
         }
 
