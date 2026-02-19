@@ -273,8 +273,8 @@ impl WeakAuraImporter {
             use iced::widget::progress_bar;
             use iced::Border;
 
-            content =
-                content.push(
+            header =
+                header.push(
                     container(progress_bar(0.0..=1.0, self.tasks.import_progress).style(
                         |_theme| progress_bar::Style {
                             background: colors::BG_SURFACE.into(),
@@ -285,7 +285,7 @@ impl WeakAuraImporter {
                     .height(Length::Fixed(8.0)),
                 );
             if !self.tasks.import_message.is_empty() {
-                content = content.push(
+                header = header.push(
                     text(&self.tasks.import_message)
                         .size(typography::CAPTION)
                         .color(colors::TEXT_SECONDARY),
