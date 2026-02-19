@@ -222,11 +222,7 @@ async fn run_import_with_resolutions(
     // Phase 2: Applying resolutions (33-66%)
     send_progress(sender, 2, 3, "Applying conflict resolutions...").await;
 
-    let result = manager.apply_resolutions(
-        &conflict_result.new_auras,
-        &conflict_result.conflicts,
-        &resolutions,
-    );
+    let result = manager.apply_resolutions(&conflict_result, &resolutions);
 
     // Phase 3: Saving (66-100%)
     send_progress(sender, 3, 3, "Saving changes...").await;
