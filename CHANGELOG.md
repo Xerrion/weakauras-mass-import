@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0](https://github.com/Xerrion/weakauras-mass-import/compare/weakauras-mass-import-v3.0.0...weakauras-mass-import-v3.1.0) (2026-02-19)
+
+
+### Features
+
+* implement WeakAuras-like aura deletion and UI improvements ([#7](https://github.com/Xerrion/weakauras-mass-import/issues/7)) ([e796388](https://github.com/Xerrion/weakauras-mass-import/commit/e7963888b73f7e6c8b41eeb7e127b80ec20564e5))
+
+
+### Code Refactoring
+
+* reorganize WeakAuraImporter with nested state structs ([51d5e63](https://github.com/Xerrion/weakauras-mass-import/commit/51d5e636fec1f7ba4d079af10546a392120b8914))
+* reorganize WeakAuraImporter with nested state structs ([7c7838f](https://github.com/Xerrion/weakauras-mass-import/commit/7c7838feb71c90e293980f5ee806f18eb3dac38b))
+
+
+### Documentation
+
+* update README and AGENTS.md to reflect current architecture ([fd1ad16](https://github.com/Xerrion/weakauras-mass-import/commit/fd1ad167c94d3b1f3589c79c4f11b6af5ba71210))
+* update README and AGENTS.md to reflect current architecture ([633610c](https://github.com/Xerrion/weakauras-mass-import/commit/633610c90709a4e0159cfb98bd8e9c5190798b5f))
+
 ## [3.0.0](https://github.com/Xerrion/weakauras-mass-import/compare/weakauras-mass-import-v2.0.0...weakauras-mass-import-v3.0.0) (2026-02-07)
 
 
