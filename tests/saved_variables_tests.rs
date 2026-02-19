@@ -1,10 +1,12 @@
 //! Tests for SavedVariables management and hierarchy preservation.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use weakauras_mass_import::decoder::{LuaValue, WeakAuraDecoder};
+use weakauras_mass_import::categories::UpdateCategory;
+use weakauras_mass_import::decoder::{LuaValue, WeakAura, WeakAuraDecoder};
 use weakauras_mass_import::saved_variables::SavedVariablesManager;
+use weakauras_mass_import::saved_variables::{ConflictAction, ConflictResolution};
 
 /// Helper: decode the Hunter import string and run it through add_auras,
 /// then verify the parent-child hierarchy is correctly preserved.
@@ -166,6 +168,47 @@ fn manager_with_displays(displays: HashMap<String, LuaValue>) -> SavedVariablesM
     mgr
 }
 
+fn make_group_with_fields(
+    id: &str,
+    parent: Option<&str>,
+    children: &[&str],
+    custom: &str,
+) -> LuaValue {
+    let mut table = HashMap::new();
+    table.insert("id".to_string(), LuaValue::String(id.to_string()));
+    table.insert(
+        "regionType".to_string(),
+        LuaValue::String("group".to_string()),
+    );
+    table.insert("custom".to_string(), LuaValue::String(custom.to_string()));
+    if let Some(p) = parent {
+        table.insert("parent".to_string(), LuaValue::String(p.to_string()));
+    }
+    let controlled: Vec<LuaValue> = children
+        .iter()
+        .map(|c| LuaValue::String(c.to_string()))
+        .collect();
+    table.insert(
+        "controlledChildren".to_string(),
+        LuaValue::Array(controlled),
+    );
+    LuaValue::Table(table)
+}
+
+fn make_aura_with_custom(id: &str, parent: Option<&str>, custom: &str) -> LuaValue {
+    let mut table = HashMap::new();
+    table.insert("id".to_string(), LuaValue::String(id.to_string()));
+    table.insert(
+        "regionType".to_string(),
+        LuaValue::String("icon".to_string()),
+    );
+    table.insert("custom".to_string(), LuaValue::String(custom.to_string()));
+    if let Some(p) = parent {
+        table.insert("parent".to_string(), LuaValue::String(p.to_string()));
+    }
+    LuaValue::Table(table)
+}
+
 #[test]
 fn test_remove_standalone_aura() {
     let mut displays = HashMap::new();
@@ -260,4 +303,133 @@ fn test_remove_nonexistent_returns_empty() {
     let removed = mgr.remove_auras(&["DoesNotExist".to_string()]);
     assert!(removed.is_empty());
     assert_eq!(mgr.displays.len(), 1);
+}
+
+#[test]
+fn test_replace_group_removes_stale_children_and_updates_descendants() {
+    let mut displays = HashMap::new();
+    displays.insert(
+        "Root".to_string(),
+        make_group_with_fields("Root", None, &["ChildA", "ChildB", "StaleChild"], "old"),
+    );
+    displays.insert(
+        "ChildA".to_string(),
+        make_aura_with_custom("ChildA", Some("Root"), "oldA"),
+    );
+    displays.insert(
+        "ChildB".to_string(),
+        make_aura_with_custom("ChildB", Some("Root"), "oldB"),
+    );
+    displays.insert(
+        "StaleChild".to_string(),
+        make_aura_with_custom("StaleChild", Some("Root"), "stale"),
+    );
+
+    let mut mgr = manager_with_displays(displays);
+
+    let root_data = make_group_with_fields("Root", None, &["ChildA", "ChildC"], "new");
+    let child_a_data = make_aura_with_custom("ChildA", Some("Root"), "newA");
+    let child_c_data = make_aura_with_custom("ChildC", Some("Root"), "newC");
+
+    let incoming = WeakAura {
+        id: "Root".to_string(),
+        uid: None,
+        region_type: Some("group".to_string()),
+        is_group: true,
+        children: vec!["ChildA".to_string(), "ChildC".to_string()],
+        data: root_data,
+        child_data: vec![child_a_data, child_c_data],
+        original_string: String::new(),
+        encoding_version: 2,
+    };
+
+    let conflicts = mgr.detect_conflicts(&[incoming]);
+    let resolutions = vec![ConflictResolution {
+        aura_id: "Root".to_string(),
+        action: ConflictAction::ReplaceAll,
+        categories_to_update: Default::default(),
+    }];
+
+    let _result = mgr.apply_resolutions(&conflicts, &resolutions);
+
+    assert!(mgr.displays.contains_key("Root"));
+    assert!(mgr.displays.contains_key("ChildA"));
+    assert!(mgr.displays.contains_key("ChildC"));
+    assert!(!mgr.displays.contains_key("ChildB"));
+    assert!(!mgr.displays.contains_key("StaleChild"));
+
+    let child_a = mgr.displays.get("ChildA").unwrap();
+    let child_a_table = child_a.as_table().unwrap();
+    assert_eq!(
+        child_a_table.get("custom"),
+        Some(&LuaValue::String("newA".to_string()))
+    );
+
+    let root = mgr.displays.get("Root").unwrap();
+    let root_table = root.as_table().unwrap();
+    let controlled = root_table.get("controlledChildren").unwrap();
+    let controlled_arr = controlled.as_array().unwrap();
+    let controlled_ids: Vec<String> = controlled_arr
+        .iter()
+        .filter_map(|value| {
+            if let LuaValue::String(s) = value {
+                Some(s.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        controlled_ids,
+        vec!["ChildA".to_string(), "ChildC".to_string()]
+    );
+}
+
+#[test]
+fn test_update_selected_arrangement_prunes_missing_children() {
+    let mut displays = HashMap::new();
+    displays.insert(
+        "Root".to_string(),
+        make_group_with_fields("Root", None, &["ChildA", "StaleChild"], "old"),
+    );
+    displays.insert(
+        "ChildA".to_string(),
+        make_aura_with_custom("ChildA", Some("Root"), "oldA"),
+    );
+    displays.insert(
+        "StaleChild".to_string(),
+        make_aura_with_custom("StaleChild", Some("Root"), "stale"),
+    );
+
+    let mut mgr = manager_with_displays(displays);
+
+    let root_data = make_group_with_fields("Root", None, &["ChildA"], "new");
+    let child_a_data = make_aura_with_custom("ChildA", Some("Root"), "oldA");
+
+    let incoming = WeakAura {
+        id: "Root".to_string(),
+        uid: None,
+        region_type: Some("group".to_string()),
+        is_group: true,
+        children: vec!["ChildA".to_string()],
+        data: root_data,
+        child_data: vec![child_a_data],
+        original_string: String::new(),
+        encoding_version: 2,
+    };
+
+    let conflicts = mgr.detect_conflicts(&[incoming]);
+    let mut categories = HashSet::new();
+    categories.insert(UpdateCategory::Arrangement);
+    let resolutions = vec![ConflictResolution {
+        aura_id: "Root".to_string(),
+        action: ConflictAction::UpdateSelected,
+        categories_to_update: categories,
+    }];
+
+    let _result = mgr.apply_resolutions(&conflicts, &resolutions);
+
+    assert!(mgr.displays.contains_key("Root"));
+    assert!(mgr.displays.contains_key("ChildA"));
+    assert!(!mgr.displays.contains_key("StaleChild"));
 }

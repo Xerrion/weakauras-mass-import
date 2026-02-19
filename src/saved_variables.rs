@@ -205,6 +205,22 @@ impl SavedVariablesManager {
 
         for aura in auras {
             let hierarchy = util::build_children_hierarchy(aura);
+            if !hierarchy.children_by_parent.is_empty() {
+                for (parent_id, child_ids) in &hierarchy.children_by_parent {
+                    result
+                        .incoming_children_by_parent
+                        .insert(parent_id.clone(), child_ids.clone());
+                }
+            }
+
+            if aura.is_group {
+                let mut descendants: Vec<String> =
+                    hierarchy.prepared_children.keys().cloned().collect();
+                descendants.sort();
+                result
+                    .incoming_descendants_by_root
+                    .insert(aura.id.clone(), descendants);
+            }
 
             // Prepare parent data with only direct controlledChildren
             let mut parent_data = aura.data.clone();
@@ -314,27 +330,110 @@ impl SavedVariablesManager {
     /// Apply all resolutions (convenience method)
     pub fn apply_resolutions(
         &mut self,
-        new_auras: &[(String, LuaValue)],
-        conflicts: &[ImportConflict],
+        conflict_result: &ConflictDetectionResult,
         resolutions: &[ConflictResolution],
     ) -> ImportResult {
         let mut added = Vec::new();
         let mut skipped = Vec::new();
         let mut replaced = Vec::new();
 
+        // Create a map for quick lookup
+        let conflict_map: HashMap<&str, &ImportConflict> = conflict_result
+            .conflicts
+            .iter()
+            .map(|c| (c.aura_id.as_str(), c))
+            .collect();
+
+        let mut resolution_map: HashMap<&str, &ConflictResolution> = HashMap::new();
+        for resolution in resolutions {
+            resolution_map.insert(resolution.aura_id.as_str(), resolution);
+        }
+        let handled_ids: HashSet<String> = resolutions
+            .iter()
+            .map(|resolution| resolution.aura_id.clone())
+            .collect();
+
+        let mut forced_replace_ids: HashSet<String> = HashSet::new();
+        let mut replace_root_ids: Vec<String> = Vec::new();
+        for resolution in resolutions {
+            if resolution.action != ConflictAction::ReplaceAll {
+                continue;
+            }
+            let Some(conflict) = conflict_map.get(resolution.aura_id.as_str()) else {
+                continue;
+            };
+            forced_replace_ids.insert(conflict.aura_id.clone());
+            if conflict.is_group {
+                replace_root_ids.push(conflict.aura_id.clone());
+                if let Some(descendants) = conflict_result
+                    .incoming_descendants_by_root
+                    .get(&conflict.aura_id)
+                {
+                    for id in descendants {
+                        forced_replace_ids.insert(id.clone());
+                    }
+                }
+            }
+        }
+
+        // If a group root is replaced, force any descendants with new data to replace too.
+        if !replace_root_ids.is_empty() {
+            for conflict in conflict_result.conflicts.iter() {
+                let incoming_parent = conflict
+                    .incoming
+                    .as_table()
+                    .and_then(|table| table.get("parent"))
+                    .and_then(|value| {
+                        if let LuaValue::String(s) = value {
+                            Some(s)
+                        } else {
+                            None
+                        }
+                    });
+                if let Some(parent_id) = incoming_parent {
+                    if replace_root_ids.iter().any(|root| root == parent_id) {
+                        forced_replace_ids.insert(conflict.aura_id.clone());
+                    }
+                }
+            }
+        }
+
+        for root_id in &replace_root_ids {
+            let incoming_descendants = conflict_result
+                .incoming_descendants_by_root
+                .get(root_id)
+                .map(|ids| ids.iter().cloned().collect::<HashSet<String>>())
+                .unwrap_or_default();
+            self.prune_missing_descendants(root_id, &incoming_descendants);
+        }
+
+        // Ensure forced replacements are applied even without explicit resolutions
+        for aura_id in &forced_replace_ids {
+            if handled_ids.contains(aura_id) {
+                continue;
+            }
+            if let Some(conflict) = conflict_map.get(aura_id.as_str()) {
+                self.displays
+                    .insert(aura_id.clone(), conflict.incoming.clone());
+                replaced.push(aura_id.clone());
+            }
+        }
+
         // Add all new auras
-        for (id, data) in new_auras {
+        for (id, data) in &conflict_result.new_auras {
             self.displays.insert(id.clone(), data.clone());
             added.push(id.clone());
         }
 
-        // Create a map for quick lookup
-        let conflict_map: HashMap<&str, &ImportConflict> =
-            conflicts.iter().map(|c| (c.aura_id.as_str(), c)).collect();
-
         // Apply resolutions
         for resolution in resolutions {
-            match resolution.action {
+            let action = if forced_replace_ids.contains(&resolution.aura_id) {
+                ConflictAction::ReplaceAll
+            } else {
+                resolution.action
+            };
+
+            match action {
                 ConflictAction::Skip => {
                     skipped.push(resolution.aura_id.clone());
                 }
@@ -348,10 +447,49 @@ impl SavedVariablesManager {
                 ConflictAction::UpdateSelected => {
                     if let Some(conflict) = conflict_map.get(resolution.aura_id.as_str()) {
                         self.selective_merge(conflict, &resolution.categories_to_update);
+                        self.update_parent_field(conflict);
+                        if conflict.is_group
+                            && resolution
+                                .categories_to_update
+                                .contains(&UpdateCategory::Arrangement)
+                        {
+                            let incoming_descendants = conflict_result
+                                .incoming_descendants_by_root
+                                .get(&conflict.aura_id)
+                                .map(|ids| ids.iter().cloned().collect::<HashSet<String>>())
+                                .unwrap_or_default();
+                            self.prune_missing_descendants(
+                                &conflict.aura_id,
+                                &incoming_descendants,
+                            );
+                        }
                         replaced.push(resolution.aura_id.clone());
                     }
                 }
             }
+        }
+
+        let mut parents_to_update: HashSet<String> = HashSet::new();
+        for parent_id in conflict_result.incoming_children_by_parent.keys() {
+            if forced_replace_ids.contains(parent_id) {
+                parents_to_update.insert(parent_id.clone());
+                continue;
+            }
+            if let Some(resolution) = resolution_map.get(parent_id.as_str()) {
+                if resolution.action != ConflictAction::Skip {
+                    parents_to_update.insert(parent_id.clone());
+                }
+            }
+        }
+
+        for parent_id in parents_to_update {
+            let Some(children) = conflict_result.incoming_children_by_parent.get(&parent_id) else {
+                continue;
+            };
+            let Some(parent_data) = self.displays.get_mut(&parent_id) else {
+                continue;
+            };
+            util::set_controlled_children(parent_data, children);
         }
 
         ImportResult {
@@ -516,6 +654,65 @@ impl SavedVariablesManager {
         result
     }
 
+    /// Collect an aura ID and all its descendant IDs using parent relationships.
+    fn collect_descendants_by_parent(&self, root_id: &str) -> HashSet<String> {
+        let mut children_map: HashMap<String, Vec<String>> = HashMap::new();
+        for (id, data) in &self.displays {
+            if let Some(table) = data.as_table() {
+                if let Some(LuaValue::String(parent_id)) = table.get("parent") {
+                    children_map
+                        .entry(parent_id.clone())
+                        .or_default()
+                        .push(id.clone());
+                }
+            }
+        }
+
+        let mut result: HashSet<String> = HashSet::new();
+        let mut stack: Vec<String> = vec![root_id.to_string()];
+        while let Some(current) = stack.pop() {
+            if result.insert(current.clone()) {
+                if let Some(children) = children_map.get(&current) {
+                    for child_id in children {
+                        stack.push(child_id.clone());
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
+    fn prune_missing_descendants(&mut self, root_id: &str, incoming_descendants: &HashSet<String>) {
+        let existing_descendants = self.collect_descendants_by_parent(root_id);
+        for existing_id in existing_descendants {
+            if existing_id == root_id {
+                continue;
+            }
+            if !incoming_descendants.contains(&existing_id) {
+                self.displays.remove(&existing_id);
+            }
+        }
+    }
+
+    fn update_parent_field(&mut self, conflict: &ImportConflict) {
+        let Some(existing) = self.displays.get_mut(&conflict.aura_id) else {
+            return;
+        };
+        let Some(incoming_table) = conflict.incoming.as_table() else {
+            return;
+        };
+        let Some(existing_table) = existing.as_table_mut() else {
+            return;
+        };
+
+        if let Some(parent_value) = incoming_table.get("parent") {
+            existing_table.insert("parent".to_string(), parent_value.clone());
+        } else {
+            existing_table.remove("parent");
+        }
+    }
+
     /// Save the SavedVariables back to file
     pub fn save(&self) -> Result<()> {
         // Create backup first
@@ -527,6 +724,20 @@ impl SavedVariablesManager {
         // Generate new content
         let content = self.generate_lua();
         fs::write(&self.path, content)?;
+
+        Ok(())
+    }
+
+    /// Save the SavedVariables to a specific file path.
+    #[allow(dead_code)]
+    pub fn save_as(&self, path: &Path) -> Result<()> {
+        if path.exists() {
+            let backup_path = path.with_extension("lua.backup");
+            fs::copy(path, &backup_path)?;
+        }
+
+        let content = self.generate_lua();
+        fs::write(path, content)?;
 
         Ok(())
     }
@@ -792,4 +1003,8 @@ pub struct ConflictDetectionResult {
     pub new_auras: Vec<(String, LuaValue)>,
     /// Auras that have conflicts
     pub conflicts: Vec<ImportConflict>,
+    /// Incoming parent -> direct children mapping (ordered)
+    pub incoming_children_by_parent: HashMap<String, Vec<String>>,
+    /// Incoming root -> descendant IDs mapping
+    pub incoming_descendants_by_root: HashMap<String, Vec<String>>,
 }

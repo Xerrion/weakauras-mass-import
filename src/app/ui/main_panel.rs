@@ -105,7 +105,7 @@ impl WeakAuraImporter {
             content = content.push(self.render_review_import_section());
         }
 
-        container(scrollable(content).style(theme::scrollable_style))
+        container(content)
             .width(Length::Fill)
             .height(Length::Fill)
             .style(theme::container_elevated)
@@ -146,10 +146,10 @@ impl WeakAuraImporter {
     }
 
     fn render_review_import_section(&self) -> Element<'_, Message> {
-        let mut content = Column::new().spacing(spacing::XS);
+        let mut header = Column::new().spacing(spacing::XS);
 
         // Header
-        content = content.push(
+        header = header.push(
             text("Review & Import")
                 .size(typography::HEADING)
                 .color(colors::GOLD),
@@ -265,14 +265,14 @@ impl WeakAuraImporter {
             .align_y(iced::Alignment::Center)
         };
 
-        content = content.push(controls_row);
+        header = header.push(controls_row);
 
         // Progress bar (shown during import)
         if self.is_importing {
             use iced::widget::progress_bar;
             use iced::Border;
 
-            content = content.push(
+            header = header.push(
                 container(
                     progress_bar(0.0..=1.0, self.import_progress).style(|_theme| {
                         progress_bar::Style {
@@ -285,7 +285,7 @@ impl WeakAuraImporter {
                 .height(Length::Fixed(8.0)),
             );
             if !self.import_progress_message.is_empty() {
-                content = content.push(
+                header = header.push(
                     text(&self.import_progress_message)
                         .size(typography::CAPTION)
                         .color(colors::TEXT_SECONDARY),
@@ -293,10 +293,13 @@ impl WeakAuraImporter {
             }
         }
 
-        // Aura List
-        content = content.push(self.render_aura_list());
-
-        content.into()
+        // Build final layout: fixed header + scrollable aura list
+        Column::new()
+            .spacing(spacing::XS)
+            .push(header)
+            .push(self.render_aura_list())
+            .height(Length::Fill)
+            .into()
     }
 
     fn render_aura_list(&self) -> Element<'_, Message> {
@@ -369,6 +372,7 @@ impl WeakAuraImporter {
                 .on_press(Message::RemoveAuraFromList(idx));
             item_row = item_row.push(space::horizontal().width(Length::Fill));
             item_row = item_row.push(remove_btn);
+            item_row = item_row.push(space::horizontal().width(Length::Fixed(spacing::SM)));
 
             list_col = list_col.push(item_row);
         }
