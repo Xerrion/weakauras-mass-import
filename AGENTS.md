@@ -1,8 +1,10 @@
 # AGENTS.md - WeakAura Mass Import
 
+**Generated**: 2026-02-20 | **Commit**: c7748fc | **Branch**: feature/aura-deletion-and-ui-improvements
+
 Rust GUI application for mass importing WeakAura strings into WoW SavedVariables files.
 
-**Stack**: Rust 1.70+ (MSRV), iced 0.14 (tokio), weakauras-codec
+**Stack**: Rust 1.70+ (MSRV), iced 0.14 (tokio), weakauras-codec, full_moon (Lua parsing)
 
 ## Build & Test Commands
 
@@ -159,7 +161,75 @@ Selective update categories: `Trigger`, `Load`, `Action`, `Animation`, `Conditio
 2. Use `#[error("...")]` for message
 3. Use `#[from]` if wrapping another error type
 
+## Architecture Notes
+
+### Hybrid Library/Binary
+- `lib.rs` exposes headless API (`WeakAuraDecoder`, `SavedVariablesManager`)
+- `main.rs` re-declares modules (not `use weakauras_mass_import::...`) — intentional for now
+- Utility binaries (`decode_test`) use the library crate
+
+### GUI Patterns (iced 0.14)
+- **Modular Impl**: `WeakAuraImporter` methods split across `app/actions/` and `app/ui/`
+- **State Composition**: Main struct composed of sub-structs (`UiVisibility`, `TaskProgress`, `ConflictState`)
+- **Message Routing**: Large `Message` enum (97 lines) extracted to `app/message.rs`
+
+See `src/app/AGENTS.md` for detailed GUI patterns.
+
+## Git & GitHub
+
+### Branching
+- `main` is the integration branch — never commit directly; always use a PR
+- Branch naming: `feature/<slug>`, `fix/<slug>`, `refactor/<slug>`, `docs/<slug>`, `ci/<slug>`
+- One logical concern per branch
+
+### Commit Messages — Conventional Commits
+```
+<type>(<optional scope>): <short description>
+
+# Types used in this repo:
+feat      – new user-facing feature
+fix       – bug fix
+refactor  – code change with no behaviour change
+docs      – documentation only
+ci        – CI/CD workflow changes
+chore     – maintenance (deps, config, release)
+test      – adding or fixing tests
+perf      – performance improvement
+```
+- Lowercase, imperative mood, no trailing period
+- `release-please` reads these to auto-bump versions and generate CHANGELOG:
+  - `feat` → minor bump, `fix`/`perf` → patch bump
+  - `feat!` or `BREAKING CHANGE:` footer → major bump
+
+### Pull Requests
+- Target `main`; one PR per feature/fix
+- Title must follow the same conventional commit format as commits
+- `cargo fmt --check` and `cargo clippy` must be green before requesting review
+- Squash or rebase — keep `main` history linear
+
+### Useful `gh` Commands
+```bash
+gh pr create --fill                      # Create PR with branch name as title
+gh pr create --title "feat: ..." --body "..."
+gh pr list                               # List open PRs
+gh pr view <number>                      # View PR details
+gh pr checks <number>                    # See CI status
+gh run list --branch <branch>            # List workflow runs
+gh run view <run-id> --log-failed        # Show failed step logs
+gh release list                          # List releases
+```
+
+### Releases
+- Managed by `release-please`; do **not** manually create tags or edit `CHANGELOG.md`
+- Merge the release-please PR to cut a release
+- The release workflow then builds and uploads binaries automatically
+
 ## CI Requirements
 - `cargo fmt --check` must pass
 - `cargo clippy` with `-Dwarnings` must pass
 - Tests must pass on: ubuntu, windows, macos × stable, 1.70 (MSRV)
+
+## Release Automation
+- `release-please` manages versioning and CHANGELOG
+- Cross-compiles: Windows (msvc), Linux (gnu), macOS (Intel + Apple Silicon)
+- Profile: LTO enabled, stripped, panic=abort

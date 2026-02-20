@@ -1,7 +1,6 @@
 {
   "packages": {
     ".": {
-      "package-name": "weakauras-mass-import",
       "release-type": "rust",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
