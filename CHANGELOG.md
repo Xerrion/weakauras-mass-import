@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.1](https://github.com/Xerrion/weakauras-mass-import/compare/weakauras-mass-import-v3.1.0...weakauras-mass-import-v3.1.1) (2026-02-20)
+
+
+### Documentation
+
+* expand AGENTS.md with arch, git workflow, and app/ subguide ([#8](https://github.com/Xerrion/weakauras-mass-import/issues/8)) ([15fc80f](https://github.com/Xerrion/weakauras-mass-import/commit/15fc80f07e6592d33b6cb5dc1e8c5a59bd33eda2))
+
 ## [3.1.0](https://github.com/Xerrion/weakauras-mass-import/compare/weakauras-mass-import-v3.0.0...weakauras-mass-import-v3.1.0) (2026-02-19)
 
 
